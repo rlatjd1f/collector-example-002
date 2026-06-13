@@ -35,7 +35,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             int functionCode = payload.readUnsignedByte();
-            // 에러 응답 체크
+            // 펑션코드 에러 체크
             if ((functionCode & 0x80) == 0x80) {
                 int exceptionCode = payload.readUnsignedByte();
                 log.error("Modbus 슬레이브 에러 응답 수신, ErrorCode = {}", exceptionCode);

@@ -47,7 +47,7 @@ public class NettyClientManager {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline().addLast("FrameDecoder", new LengthFieldBasedFrameDecoder(
-                                256, 4,2,0,0));
+                                260, 4,2,0,0));
                         ch.pipeline().addLast("ModbusBodyDecoder", new ModbusPacketDecoder());
                     }
                 });
@@ -62,11 +62,9 @@ public class NettyClientManager {
         bootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
                 log.info("디바이스 연결 성공 -> {}", device.deviceName());
-
                 startPolling(future.channel(), device);
             } else {
-                log.error("디바이스 연결 실패 -> {}, 10초후  재연결 시도", device.deviceName());
-
+                log.error("디바이스 연결 timeout 실패 -> {}, 10초후  재연결 시도", device.deviceName());
                 future.channel().eventLoop().schedule(() -> connect(device), 10, TimeUnit.SECONDS);
             }
         });

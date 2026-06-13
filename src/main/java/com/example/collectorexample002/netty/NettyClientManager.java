@@ -3,17 +3,16 @@ package com.example.collectorexample002.netty;
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.record.Device;
 import com.example.collectorexample002.db.record.ModbusRegister;
-import com.example.collectorexample002.modbus.ModbusContext;
 import com.example.collectorexample002.modbus.record.ModbusPendingRequest;
 import com.example.collectorexample002.modbus.ModbusRequestManager;
-import com.example.collectorexample002.netty.pipeline.ModbusBodyDecoder;
-import com.example.collectorexample002.netty.pipeline.ModbusHeaderDecoder;
+import com.example.collectorexample002.netty.pipeline.ModbusPacketDecoder;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,8 +46,9 @@ public class NettyClientManager {
 
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
-                        ch.pipeline().addLast("ModbusHeaderDecoder", new ModbusHeaderDecoder());
-                        ch.pipeline().addLast("ModbusBodyDecoder", new ModbusBodyDecoder());
+                        ch.pipeline().addLast("FrameDecoder", new LengthFieldBasedFrameDecoder(
+                                256, 4,2,0,0));
+                        ch.pipeline().addLast("ModbusBodyDecoder", new ModbusPacketDecoder());
                     }
                 });
     }
@@ -62,9 +62,6 @@ public class NettyClientManager {
         bootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
                 log.info("디바이스 연결 성공 -> {}", device.deviceName());
-
-                // 파이프라인 단계에서 device id 를 구분해서 처리하기 위해 채널에 저장
-                future.channel().attr(ModbusContext.DEVICE_ID_KEY).set(device.deviceId());
 
                 startPolling(future.channel(), device);
             } else {

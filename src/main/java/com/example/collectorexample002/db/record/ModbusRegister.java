@@ -3,12 +3,11 @@ package com.example.collectorexample002.db.record;
 public record ModbusRegister(
         Long deviceId,
         Long registerId,
-        Integer registerAddress,
-        Integer registerCount,
+        int registerAddress,
+        int registerCount,
         String dataType,
         String dataUnit,
         String permission,
         String description
-
 ) {
 }

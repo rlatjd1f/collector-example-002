@@ -11,3 +11,6 @@ spring:
     validate-on-migrate: true
     validate-migration-naming: true
     clean-disabled: true
+collector:
+  polling_cycle: 10
+  connection_timeout: 3

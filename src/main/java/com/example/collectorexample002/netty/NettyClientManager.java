@@ -13,9 +13,12 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timer;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -32,14 +35,26 @@ public class NettyClientManager {
     private final DeviceJdbcRepository deviceJdbcRepository;
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
 
+    private static final String READONLY_PERMISSION = "R/O";
+
+    @Value("${collector.polling_cycle}")
+    private int polling_cycle;
+
+    @Value("${collector.connection_timeout}")
+    private int connection_timeout;
+
     private EventLoopGroup group;
     private Bootstrap bootstrap;
+
+    private Timer hashedWheelTimer;
 
     public void init() {
         log.info("netty initialize start...");
         this.group = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
-        this.bootstrap = new Bootstrap();
 
+        this.hashedWheelTimer = new HashedWheelTimer(100,TimeUnit.MILLISECONDS, 512);
+
+        this.bootstrap = new Bootstrap();
         this.bootstrap.group(group)
                 .channel(NioSocketChannel.class)
                 .handler(new ChannelInitializer<SocketChannel>() {
@@ -59,22 +74,29 @@ public class NettyClientManager {
 
         log.info("디바이스 연결 시도 [{}]( {}:{} )...", device.deviceName(), host, port);
 
+        List<ModbusRegister> registers = deviceJdbcRepository.findRegisterByDeviceId(device.deviceId(), READONLY_PERMISSION);
+        if (registers.isEmpty()) {
+            // 디바이스에 등록된 레지스터 정보가 없으면 폴링할 정보가 없다는뜻
+            log.warn("{} 디바이스에 등록된 레지스터 정보가 없음, 종료", device.deviceName());
+            return;
+        }
+
         bootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
                 log.info("디바이스 연결 성공 -> {}", device.deviceName());
-                startPolling(future.channel(), device);
+                polling(future.channel(), device, registers);
             } else {
                 log.error("디바이스 연결 timeout 실패 -> {}, 10초후  재연결 시도", device.deviceName());
-                future.channel().eventLoop().schedule(() -> connect(device), 10, TimeUnit.SECONDS);
+                hashedWheelTimer.newTimeout(timeout -> connect(device), connection_timeout, TimeUnit.SECONDS);
             }
         });
     }
 
-    public void startPolling(Channel channel, Device device) {
-        List<ModbusRegister> registers = deviceJdbcRepository.findRegisterByDeviceId(device.deviceId());
+    public void polling(Channel channel, Device device, List<ModbusRegister> registers) {
 
-        if (registers.isEmpty()) {
-            log.warn("{} 디바이스에 등록된 레지스터 정보가 없음, 폴링 실패", device.deviceName());
+        if(!channel.isActive()) {
+            log.warn("{} 디바이스 채널 비활성화로 채널 종료, 재연결 시도", device.deviceName());
+            hashedWheelTimer.newTimeout(timeout -> connect(device), connection_timeout, TimeUnit.SECONDS);
             return;
         }
 
@@ -89,7 +111,7 @@ public class NettyClientManager {
                             } finally {
                                 payload.release();
                             }
-                })
+                        })
                         .exceptionally(ex -> {
                             log.error("register address = {} 수집 실패, {}", register.registerAddress(), ex.getMessage());
                             return null;
@@ -97,6 +119,7 @@ public class NettyClientManager {
             }
         });
 
+        hashedWheelTimer.newTimeout(timeout -> polling(channel, device, registers), polling_cycle, TimeUnit.SECONDS);
     }
 
     private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, ModbusRegister register) {
@@ -130,7 +153,7 @@ public class NettyClientManager {
             }
         });
 
-        channel.eventLoop().schedule(() -> {
+        hashedWheelTimer.newTimeout(timeout -> {
             ModbusPendingRequest pendingRequest = ModbusRequestManager.RESPONSE_PROMISE.remove(txId);
 
             // 비동기 응답이 디코딩 단계에서 정상처리 된 경우 remove 되었으므로 null 반환 정상
@@ -150,6 +173,12 @@ public class NettyClientManager {
 
     @PreDestroy
     public void shutdown() {
+
+        if(hashedWheelTimer != null) {
+            log.info("HashedWheelTimer 종료 처리");
+            hashedWheelTimer.stop();
+        }
+
         if (group != null) {
             log.info("Netty EventLoopGroup 종료 처리");
             group.shutdownGracefully();

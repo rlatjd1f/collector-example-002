@@ -6,7 +6,9 @@ public record ModbusRegister(
         Integer registerAddress,
         Integer registerCount,
         String dataType,
-        String description,
-        Integer pollingCycle
+        String dataUnit,
+        String permission,
+        String description
+
 ) {
 }

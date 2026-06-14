@@ -28,17 +28,13 @@ public class DeviceJdbcRepository {
         return jdbcTemplate.query(sql, deviceRowMapper);
     }
 
-    public List<ModbusRegister> findRegisterByDeviceId(Long deviceId) {
-        String sql = "Select device_id       \n" +
-                ",register_id     \n" +
-                ",register_address\n" +
-                ",register_count  \n" +
-                ",data_type       \n" +
-                ",description     \n" +
-                ",polling_cycle from modbus_register where device_id = :device_id";
+    public List<ModbusRegister> findRegisterByDeviceId(Long deviceId, String permission) {
+        String sql = "Select device_id, register_id, register_address, register_count, data_type, data_unit, permission, description \n" +
+                " from modbus_register where device_id = :device_id and permission = :permission";
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("device_id", deviceId);
+                .addValue("device_id", deviceId)
+                .addValue("permission", permission);
 
         return jdbcTemplate.query(sql, params, modbusRegisterRowMapper);
     }

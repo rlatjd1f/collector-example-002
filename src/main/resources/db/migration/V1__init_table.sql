@@ -21,8 +21,9 @@ create table modbus_register (
     register_address    int unsigned not null,
     register_count      int unsigned not null,
     data_type           varchar(20) not null,
+    data_unit           varchar(20),
+    permission          varchar(10),
     description         varchar(500),
-    polling_cycle       tinyint unsigned not null,
     primary key (register_id),
     constraint fk_modbus_register_device foreign key (device_id) references device(device_id)
 );

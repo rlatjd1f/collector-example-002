@@ -1,8 +1,8 @@
 package com.example.collectorexample002.netty.pipeline;
 
-import com.example.collectorexample002.db.record.ModbusRegister;
-import com.example.collectorexample002.modbus.ModbusRequestManager;
-import com.example.collectorexample002.modbus.record.ModbusRequest;
+import com.example.collectorexample002.db.record.CheckpointMaster;
+import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
+import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -25,9 +25,10 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         int protocolId = payload.readUnsignedShort();
         int length = payload.readUnsignedShort();
         int unitId = payload.readUnsignedByte();
+        log.debug("channelRead txId: {}, protocolId: {}, length: {}, unitId: {}", txId, protocolId, length, unitId);
 
         try {
-            ModbusRequest pendingRequest = ModbusRequestManager.RESPONSE_PROMISE.remove(txId);
+            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
 
             if (pendingRequest == null) {
                 log.warn("TxId {} 에 매칭되는 요청 레지스터를 찾을수 없음, 데이터 스킵", txId);
@@ -46,7 +47,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             int byteCount = payload.readUnsignedByte();
 
             // 요청시 사용했던 레지스터 리스트 정보
-            List<ModbusRegister> registers = pendingRequest.registers();
+            List<CheckpointMaster> registers = pendingRequest.registers();
             parsePayloads(payload, registers, byteCount, txId);
 
             CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
@@ -62,15 +63,15 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     }
 
-    private void parsePayloads(ByteBuf payload, List<ModbusRegister> registers, int byteCount, int txId) {
+    private void parsePayloads(ByteBuf payload, List<CheckpointMaster> registers, int byteCount, int txId) {
 
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
-        for (ModbusRegister register : registers) {
+        for (CheckpointMaster register : registers) {
 
             // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
-            int requireBytes = register.registerCount() * 2;
+            int requireBytes = register.checkpointCount() * 2;
 
             // payload 바이트 크기 유효성 검증
             if (payload.readerIndex() + requireBytes > endReadIndex || payload.readableBytes() < requireBytes) {
@@ -90,11 +91,9 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 case "INT32U" -> parsedValue = payload.readUnsignedInt();
                 case "INT32" -> parsedValue = payload.readInt();
                 case "INT64" -> parsedValue = payload.readLong();
-                case "FLOAT32" -> {
-                    parsedValue = wordSwap(payload);
-                }
+                case "FLOAT32" -> parsedValue = wordSwap(payload);
                 case "BITMAP" -> {
-                    if (register.registerCount() == 1) {
+                    if (register.checkpointCount() == 1) {
                         parsedValue = Integer.toBinaryString(payload.readUnsignedShort());
                     } else {
                         parsedValue = Long.toBinaryString(payload.readUnsignedInt());
@@ -125,7 +124,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             if (parsedValue != null) {
-                log.info("[데이터 수집 완료] dataType: {}, register [{} - {}] = {}", type, register.registerAddress(), register.description(), parsedValue);
+                log.info("[데이터 수집 완료] dataType: {}, register [{} - {}] = {}", type, register.checkpointAddress(), register.description(), parsedValue);
             }
         }
 

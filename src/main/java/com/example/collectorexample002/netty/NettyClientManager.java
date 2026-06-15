@@ -2,9 +2,9 @@ package com.example.collectorexample002.netty;
 
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.record.Device;
-import com.example.collectorexample002.db.record.ModbusRegister;
-import com.example.collectorexample002.modbus.record.ModbusRequest;
-import com.example.collectorexample002.modbus.ModbusRequestManager;
+import com.example.collectorexample002.db.record.CheckpointMaster;
+import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
+import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
 import com.example.collectorexample002.netty.pipeline.ModbusPacketDecoder;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -38,7 +38,6 @@ public class NettyClientManager {
     private final DeviceJdbcRepository deviceJdbcRepository;
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
 
-    private static final String READONLY_PERMISSION = "R/O";
     private static final int MAX_REQUEST_REGISTERS = 125;
 
     @Value("${collector.polling_cycle}")
@@ -46,6 +45,9 @@ public class NettyClientManager {
 
     @Value("${collector.connection_timeout}")
     private int connection_timeout;
+
+    @Value("${collector.response_timeout}")
+    private int response_timeout;
 
     private EventLoopGroup group;
     private Bootstrap bootstrap;
@@ -57,6 +59,7 @@ public class NettyClientManager {
         this.group = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
         // 내부 인덱스 계산시 비트연산 속도 효율을 위한 2의 제곱으로 ticksPerWheel 설정
+        // 주기 정확성을 위해 간격을 0.1초로 지정
         this.hashedWheelTimer = new HashedWheelTimer(100, TimeUnit.MILLISECONDS, 512);
 
         this.bootstrap = new Bootstrap();
@@ -79,7 +82,7 @@ public class NettyClientManager {
 
         log.info("디바이스 연결 시도 [{}]( {}:{} )...", device.deviceName(), host, port);
 
-        List<ModbusRegister> registers = deviceJdbcRepository.findRegisterByDeviceId(device.deviceId(), READONLY_PERMISSION);
+        List<CheckpointMaster> registers = deviceJdbcRepository.findRegisterByDeviceId(device.deviceId());
         if (registers.isEmpty()) {
             // 디바이스에 등록된 레지스터 정보가 없으면 폴링할 정보가 없다는뜻
             log.warn("{} 디바이스에 등록된 레지스터 정보가 없음, 종료", device.deviceName());
@@ -87,7 +90,7 @@ public class NettyClientManager {
         }
 
         // 연속된 주소로 요청가능한 레지스터들을 블록단위로 생성
-        Map<Integer, List<ModbusRegister>> readBlocks = makeReadBlocks(registers);
+        Map<Integer, List<CheckpointMaster>> readBlocks = makeReadBlocks(registers);
 
         bootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
@@ -100,7 +103,7 @@ public class NettyClientManager {
         });
     }
 
-    public void polling(Channel channel, Device device, Map<Integer, List<ModbusRegister>> readBlocks) {
+    public void polling(Channel channel, Device device, Map<Integer, List<CheckpointMaster>> readBlocks) {
 
         if(!channel.isActive()) {
             log.warn("{} 디바이스 채널 비활성화로 채널 종료, 재연결 시도", device.deviceName());
@@ -112,16 +115,16 @@ public class NettyClientManager {
 
         channel.eventLoop().execute(()-> {
             readBlocks.forEach((txId, registers) -> {
-                sendModbusRequest(channel, registers, txId)
+                sendModbusRequest(channel, device.unitId(), registers, txId)
                         .thenAccept(payload -> {
                             try {
-                                log.info("[수신 완료] register start address = {}, count = {}", registers.get(0).registerAddress(), registers.size());
+                                log.info("[수신 완료] register start address = {}, count = {}", registers.get(0).checkpointAddress(), registers.size());
                             } finally {
                                 payload.release();
                             }
                         })
                         .exceptionally(ex -> {
-                            log.error("register address = {} 수집 실패, {}", registers.get(0).registerAddress(), ex.getMessage());
+                            log.error("register address = {} 수집 실패, {}", registers.get(0).checkpointAddress(), ex.getMessage());
                             return null;
                         });
             });
@@ -131,10 +134,61 @@ public class NettyClientManager {
         hashedWheelTimer.newTimeout(timeout -> polling(channel, device, readBlocks), polling_cycle, TimeUnit.SECONDS);
     }
 
-    private Map<Integer, List<ModbusRegister>> makeReadBlocks(List<ModbusRegister> registers) {
+    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<CheckpointMaster> registers, Integer txId) {
+        CompletableFuture<ByteBuf> future = new CompletableFuture<>();
 
-        Map<Integer, List<ModbusRegister>> readBlocks = new HashMap<>();
-        List<ModbusRegister> blockRegisters = new ArrayList<>();
+        // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 register 정보 전달
+        CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, registers));
+        // 연속된 레지스터들의 시작 주소
+        int registerAddress = registers.get(0).checkpointAddress();
+        // 연속된 레지스터들의 카운트 합
+        int registersCount = registers.stream().mapToInt(CheckpointMaster::checkpointCount).sum();
+
+        // Modbus TCP MBAP Header + PDU
+        ByteBuf requestBuffer = channel.alloc().buffer(12);
+
+        // HEADER 7 Bytes
+        requestBuffer.writeShort(txId);
+        requestBuffer.writeShort(0);    // protocol id
+        requestBuffer.writeShort(6);    // length
+        requestBuffer.writeByte(unitId);     // unit id
+
+        // PDU 5 Bytes
+        requestBuffer.writeByte(3); // function code 0x03
+        requestBuffer.writeShort(registerAddress);
+        requestBuffer.writeShort(registersCount);
+
+        channel.writeAndFlush(requestBuffer).addListener(writeFuture -> {
+            if(!writeFuture.isSuccess()) {
+                // 소켓 전송 실패한 경우 리턴
+                CheckpointRequestManager.REQUEST_MAP.remove(txId);
+                future.completeExceptionally(writeFuture.cause());
+            }
+        });
+
+        // 응답 타임아웃 처리
+        hashedWheelTimer.newTimeout(timeout -> {
+            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
+
+            // 비동기 응답이 디코딩 단계에서 정상처리 된 경우 remove 되었으므로 null 반환 정상
+            if (pendingRequest == null) {
+                return;
+            }
+
+            // 디코딩 단계에서 remove 처리되지 않은경우 타임아웃으로 판단
+            CompletableFuture<ByteBuf> removed = pendingRequest.future();
+            if (removed != null && !removed.isDone()) {
+                removed.completeExceptionally(new TimeoutException("응답 타임아웃"));
+            }
+        }, response_timeout, TimeUnit.SECONDS);
+
+        return future;
+    }
+
+    private Map<Integer, List<CheckpointMaster>> makeReadBlocks(List<CheckpointMaster> registers) {
+
+        Map<Integer, List<CheckpointMaster>> readBlocks = new HashMap<>();
+        List<CheckpointMaster> blockRegisters = new ArrayList<>();
 
         int currentAddress;
         int currentCount;
@@ -143,10 +197,10 @@ public class NettyClientManager {
 
         int requestCount;
 
-        for (ModbusRegister register : registers) {
+        for (CheckpointMaster register : registers) {
 
-            currentAddress = register.registerAddress();
-            currentCount = register.registerCount();
+            currentAddress = register.checkpointAddress();
+            currentCount = register.checkpointCount();
             requestCount = blockRegisters.size();
 
             if (requestCount == 0) {
@@ -175,56 +229,6 @@ public class NettyClientManager {
     private Integer generateTxId() {
         // transactionId 생성 0~65535 반복
         return transactionIdGenerator.incrementAndGet() & 0xFFFF;
-    }
-
-    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, List<ModbusRegister> registers, Integer txId) {
-        CompletableFuture<ByteBuf> future = new CompletableFuture<>();
-
-        // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 register 정보 전달
-        ModbusRequestManager.RESPONSE_PROMISE.put(txId, new ModbusRequest(future, registers));
-        // 연속된 레지스터들의 시작 주소
-        int registerAddress = registers.get(0).registerAddress();
-        // 연속된 레지스터들의 카운트 합
-        int registersCount = registers.stream().mapToInt(ModbusRegister::registerCount).sum();
-
-        // Modbus TCP MBAP Header + PDU
-        ByteBuf requestBuffer = channel.alloc().buffer(12);
-
-        // HEADER 7 Bytes
-        requestBuffer.writeShort(txId);
-        requestBuffer.writeShort(0);    // protocol id
-        requestBuffer.writeShort(6);    // length
-        requestBuffer.writeByte(1);     // unit id
-
-        // PDU 5 Bytes
-        requestBuffer.writeByte(3); // function code 0x03
-        requestBuffer.writeShort(registerAddress);
-        requestBuffer.writeShort(registersCount);
-
-        channel.writeAndFlush(requestBuffer).addListener(writeFuture -> {
-            if(!writeFuture.isSuccess()) {
-                // 소켓 전송 실패한 경우 리턴
-                ModbusRequestManager.RESPONSE_PROMISE.remove(txId);
-                future.completeExceptionally(writeFuture.cause());
-            }
-        });
-
-        hashedWheelTimer.newTimeout(timeout -> {
-            ModbusRequest pendingRequest = ModbusRequestManager.RESPONSE_PROMISE.remove(txId);
-
-            // 비동기 응답이 디코딩 단계에서 정상처리 된 경우 remove 되었으므로 null 반환 정상
-            if (pendingRequest == null) {
-                return;
-            }
-
-            // 디코딩 단계에서 remove 처리되지 않은경우 타임아웃으로 판단
-            CompletableFuture<ByteBuf> removed = pendingRequest.future();
-            if (removed != null && !removed.isDone()) {
-                removed.completeExceptionally(new TimeoutException("Modbus 응답 타임아웃"));
-            }
-        }, connection_timeout, TimeUnit.SECONDS);
-
-        return future;
     }
 
     @PreDestroy

@@ -23,9 +23,6 @@ public class CollectorManager implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) throws Exception {
 
-        // netty 프레임워크 초기화, 파이프라인 구성
-        nettyClientManager.init();
-
         // 장비목록 전체 조회후 netty 비동기 연결 호출
         List<Device> devices = deviceJdbcRepository.findAllDevice();
         devices.forEach(nettyClientManager::connect);

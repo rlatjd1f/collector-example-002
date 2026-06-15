@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
+@Component
 public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     @Override

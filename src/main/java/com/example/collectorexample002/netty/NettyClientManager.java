@@ -38,6 +38,10 @@ public class NettyClientManager {
     private final DeviceJdbcRepository deviceJdbcRepository;
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
 
+    private final EventLoopGroup group;
+    private final Bootstrap bootstrap;
+    private final Timer hashedWheelTimer;
+
     private static final int MAX_REQUEST_REGISTERS = 125;
 
     @Value("${collector.polling_cycle}")
@@ -48,33 +52,6 @@ public class NettyClientManager {
 
     @Value("${collector.response_timeout}")
     private int response_timeout;
-
-    private EventLoopGroup group;
-    private Bootstrap bootstrap;
-
-    private Timer hashedWheelTimer;
-
-    public void init() {
-        log.info("netty initialize start...");
-        this.group = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
-
-        // 내부 인덱스 계산시 비트연산 속도 효율을 위한 2의 제곱으로 ticksPerWheel 설정
-        // 주기 정확성을 위해 간격을 0.1초로 지정
-        this.hashedWheelTimer = new HashedWheelTimer(100, TimeUnit.MILLISECONDS, 512);
-
-        this.bootstrap = new Bootstrap();
-        this.bootstrap.group(group)
-                .channel(NioSocketChannel.class)
-                .handler(new ChannelInitializer<SocketChannel>() {
-
-                    @Override
-                    protected void initChannel(SocketChannel ch) throws Exception {
-                        ch.pipeline().addLast("FrameDecoder", new LengthFieldBasedFrameDecoder(
-                                260, 4,2,0,0));
-                        ch.pipeline().addLast("ModbusPacketDecoder", new ModbusPacketDecoder());
-                    }
-                });
-    }
 
     public void connect(Device device) {
         String host = device.deviceHost();

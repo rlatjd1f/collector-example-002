@@ -36,7 +36,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             int functionCode = payload.readUnsignedByte();
-            // modbus 예외 응답 처
+            // modbus 응답 예외 처리
             if ((functionCode & 0x80) == 0x80) {
                 int exceptionCode = payload.readUnsignedByte();
                 log.error("Modbus 슬레이브 에러 응답 수신, ErrorCode = {}", exceptionCode);
@@ -45,12 +45,14 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
             int byteCount = payload.readUnsignedByte();
 
+            // 요청시 사용했던 레지스터 리스트 정보
             List<ModbusRegister> registers = pendingRequest.registers();
             parsePayloads(payload, registers, byteCount, txId);
 
             CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
 
             if (responseFuture != null && !responseFuture.isDone()) {
+                // 파싱 완료후 비동기 완료처리
                 responseFuture.complete(payload.retain());
             }
 
@@ -64,14 +66,13 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         int endReadIndex = payload.readerIndex() + byteCount;
 
-        // register 개별 파싱 작
+        // register 개별 파싱 작업
         for (ModbusRegister register : registers) {
-
-            Long deviceId = register.deviceId();
 
             // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
             int requireBytes = register.registerCount() * 2;
 
+            // payload 바이트 크기 유효성 검증
             if (payload.readerIndex() + requireBytes > endReadIndex || payload.readableBytes() < requireBytes) {
                 log.warn("TxId = {} 수신 데이터 크기가 레지스터 요구량 보다 작음", txId);
                 if (payload.readerIndex() < endReadIndex) {
@@ -89,7 +90,9 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 case "INT32U" -> parsedValue = payload.readUnsignedInt();
                 case "INT32" -> parsedValue = payload.readInt();
                 case "INT64" -> parsedValue = payload.readLong();
-                case "FLOAT32" -> parsedValue = payload.readFloat();
+                case "FLOAT32" -> {
+                    parsedValue = wordSwap(payload);
+                }
                 case "BITMAP" -> {
                     if (register.registerCount() == 1) {
                         parsedValue = Integer.toBinaryString(payload.readUnsignedShort());
@@ -110,7 +113,9 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 case "UTF8" -> {
                     byte[] strBytes = new byte[requireBytes];
                     payload.readBytes(strBytes);
-                    parsedValue = new String(strBytes, StandardCharsets.UTF_8).trim();
+
+                    // 문자열 중간에 null(0x00) 바이트 제거하여 표현
+                    parsedValue = new String(strBytes, StandardCharsets.UTF_8).replaceAll("\\u0000", "");
                 }
 
                 default -> {
@@ -120,7 +125,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             if (parsedValue != null) {
-                log.info("[데이터 수집 완료] deviceId = {}, register [{}] = {}", deviceId, register.description(), parsedValue);
+                log.info("[데이터 수집 완료] dataType: {}, register [{} - {}] = {}", type, register.registerAddress(), register.description(), parsedValue);
             }
         }
 
@@ -128,5 +133,15 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             int skipBytes = endReadIndex - payload.readerIndex();
             payload.skipBytes(skipBytes);
         }
+    }
+
+    private float wordSwap(ByteBuf payload) {
+        // A B C D => C D A B, float 데이터는
+        int swapedInt = ((payload.readByte() & 0xFF) << 8)  |
+                        ((payload.readByte() & 0xFF))       |
+                        ((payload.readByte() & 0xFF) << 24) |
+                        ((payload.readByte() & 0xFF) << 16);
+
+        return Float.intBitsToFloat(swapedInt);
     }
 }

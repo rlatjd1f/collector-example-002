@@ -13,4 +13,4 @@ spring:
     clean-disabled: true
 collector:
   polling_cycle: 10
-  connection_timeout: 3
+  connection_timeout: 5

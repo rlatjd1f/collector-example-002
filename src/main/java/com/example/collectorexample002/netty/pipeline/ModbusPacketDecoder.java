@@ -35,7 +35,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         log.debug("channelRead txId: {}, protocolId: {}, length: {}, unitId: {}", txId, protocolId, length, unitId);
 
         try {
-            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
+            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.get(txId);
 
             if (pendingRequest == null) {
                 log.warn("TxId {} 에 매칭되는 요청 레지스터를 찾을수 없음, 데이터 스킵", txId);
@@ -67,6 +67,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
             if (responseFuture != null && !responseFuture.isDone()) {
                 // 파싱 완료후 비동기 완료처리
+                CheckpointRequestManager.REQUEST_MAP.remove(txId);
                 responseFuture.complete(payload.retain());
             }
 
@@ -149,6 +150,8 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 }
             } else if (parsedValue != null) {
                 log.info("[체크포인트 수집 {}] {} => {} {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, checkpoint.dataUnit());
+            } else {
+                // todo 파싱 실패
             }
         }
 

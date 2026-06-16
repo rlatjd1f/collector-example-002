@@ -1,11 +1,13 @@
 package com.example.collectorexample002.netty.pipeline;
 
-import com.example.collectorexample002.db.record.CheckpointMaster;
+import com.example.collectorexample002.db.record.Checkpoints;
 import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
 import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
+import com.example.collectorexample002.netty.config.ChannelAttributes;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -14,10 +16,13 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     @Override
@@ -47,10 +52,16 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             int byteCount = payload.readUnsignedByte();
+            if (length - 3 != byteCount) {
+                log.error("length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
+                return;
+            }
+
+            Map<Long, Map<Integer, String>> enumMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
             // 요청시 사용했던 레지스터 리스트 정보
-            List<CheckpointMaster> registers = pendingRequest.registers();
-            parsePayloads(payload, registers, byteCount, txId);
+            List<Checkpoints> checkpoints = pendingRequest.registers();
+            parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
 
             CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
 
@@ -62,18 +73,17 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-
     }
 
-    private void parsePayloads(ByteBuf payload, List<CheckpointMaster> registers, int byteCount, int txId) {
+    private void parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
 
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
-        for (CheckpointMaster register : registers) {
+        for (Checkpoints checkpoint : checkpoints) {
 
             // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
-            int requireBytes = register.checkpointCount() * 2;
+            int requireBytes = checkpoint.checkpointCount() * 2;
 
             // payload 바이트 크기 유효성 검증
             if (payload.readerIndex() + requireBytes > endReadIndex || payload.readableBytes() < requireBytes) {
@@ -85,7 +95,8 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
 
             Object parsedValue = null;
-            String type = register.dataType().toUpperCase();
+            Optional<String> parsedEnumName;
+            String type = checkpoint.dataType().toUpperCase();
 
             switch (type) {
                 case "INT16U" -> parsedValue = payload.readUnsignedShort();
@@ -95,7 +106,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 case "INT64" -> parsedValue = payload.readLong();
                 case "FLOAT32" -> parsedValue = wordSwap(payload);
                 case "BITMAP" -> {
-                    if (register.checkpointCount() == 1) {
+                    if (checkpoint.checkpointCount() == 1) {
                         parsedValue = Integer.toBinaryString(payload.readUnsignedShort());
                     } else {
                         parsedValue = Long.toBinaryString(payload.readUnsignedInt());
@@ -125,11 +136,23 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 }
             }
 
-            if (parsedValue != null) {
-                log.info("[데이터 수집 완료] dataType: {}, register [{} - {}] = {}", type, register.checkpointAddress(), register.description(), parsedValue);
+            // enum 파싱
+            if (checkpoint.valueType().equals("enum")) {
+                if (parsedValue instanceof Number numValue)
+                {
+                    Map<Integer, String> integerStringMap = enumMap.get(checkpoint.enumId());
+                    parsedEnumName = Optional.ofNullable(integerStringMap.get(numValue.intValue()));
+
+                    if (parsedEnumName.isPresent()) {
+                        log.info("[체크포인트 수집 {}] {} => {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedEnumName);
+                    }
+                }
+            } else if (parsedValue != null) {
+                log.info("[체크포인트 수집 {}] {} => {} {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, checkpoint.dataUnit());
             }
         }
 
+        // 잔여 바이트 제거
         if (payload.readerIndex() < endReadIndex) {
             int skipBytes = endReadIndex - payload.readerIndex();
             payload.skipBytes(skipBytes);
@@ -137,7 +160,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     private float wordSwap(ByteBuf payload) {
-        // A B C D => C D A B, float 데이터는
+        // A B C D => C D A B
         int swapedInt = ((payload.readByte() & 0xFF) << 8)  |
                         ((payload.readByte() & 0xFF))       |
                         ((payload.readByte() & 0xFF) << 24) |

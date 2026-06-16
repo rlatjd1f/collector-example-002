@@ -5,15 +5,9 @@ import com.example.collectorexample002.db.record.Device;
 import com.example.collectorexample002.db.record.CheckpointMaster;
 import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
 import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
-import com.example.collectorexample002.netty.pipeline.ModbusPacketDecoder;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioIoHandler;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timer;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +33,8 @@ public class NettyClientManager {
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
 
     private final EventLoopGroup group;
-    private final Bootstrap bootstrap;
+    private final Bootstrap modbusBootstrap;
+    private final Bootstrap customBootstrap;
     private final Timer hashedWheelTimer;
 
     private static final int MAX_REQUEST_REGISTERS = 125;
@@ -54,6 +49,9 @@ public class NettyClientManager {
     private int response_timeout;
 
     public void connect(Device device) {
+
+        // TODO 디바이스 테이블의 프로토콜을 기준으로 클래스, 인터페이스 나눠서 처리
+
         String host = device.deviceHost();
         int port = device.devicePort();
 
@@ -69,7 +67,7 @@ public class NettyClientManager {
         // 연속된 주소로 요청가능한 레지스터들을 블록단위로 생성
         Map<Integer, List<CheckpointMaster>> readBlocks = makeReadBlocks(registers);
 
-        bootstrap.connect(host, port).addListener((ChannelFuture future) -> {
+        modbusBootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
                 log.info("디바이스 연결 성공 -> {}", device.deviceName());
                 polling(future.channel(), device, readBlocks);

@@ -25,12 +25,12 @@ create table enum_master (
 create table enum_detail (
     enum_id     bigint not null,
     enum_code   int not null,
-    enum_name   varchar(100),
+    enum_detail_name   varchar(100),
     primary key (enum_id, enum_code),
     constraint fk_enum_detail_master foreign key (enum_id) references enum_master(enum_id) on delete cascade
 );
 
-create table checkpoint_master (
+create table checkpoints (
     device_id           bigint,
     checkpoint_id         bigint auto_increment not null,
     checkpoint_address    int unsigned not null,

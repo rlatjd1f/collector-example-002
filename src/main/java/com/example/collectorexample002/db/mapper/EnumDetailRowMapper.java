@@ -13,7 +13,7 @@ public class EnumDetailRowMapper implements RowMapper<EnumDetail> {
         return new EnumDetail(
                 rs.getLong("enum_id"),
                 rs.getInt("enum_code"),
-                rs.getString("enum_detail_name")
+                rs.getString("enum_value")
         );
     }
 }

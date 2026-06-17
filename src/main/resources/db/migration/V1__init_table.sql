@@ -16,18 +16,18 @@ create table device
     constraint fk_device_protocol foreign key (protocol_id) references protocol (protocol_id)
 );
 
-create table enum_master (
+create table checkpoint_enum_master (
     enum_id     bigint auto_increment not null,
     enum_name   varchar(100) not null,
     primary key (enum_id)
 );
 
-create table enum_detail (
+create table checkpoint_enum_infos (
     enum_id     bigint not null,
     enum_code   int not null,
-    enum_detail_name   varchar(100),
+    enum_value  varchar(100),
     primary key (enum_id, enum_code),
-    constraint fk_enum_detail_master foreign key (enum_id) references enum_master(enum_id) on delete cascade
+    constraint fk_enum_detail_master foreign key (enum_id) references checkpoint_enum_master(enum_id) on delete cascade
 );
 
 create table checkpoints (
@@ -37,11 +37,11 @@ create table checkpoints (
     checkpoint_count      int unsigned not null,
     data_type           varchar(20) not null,
     data_unit           varchar(20),
-    calculate           varchar(10) not null, -- 성능 계산식
-    value_type          varchar(20) not null, -- enumeration 연관관계
+    calculate           varchar(10) not null,
+    value_type          varchar(20) not null,
     enum_id             bigint,
     description         varchar(200),
     primary key (checkpoint_id),
     constraint fk_checkpoint_device foreign key (device_id) references device(device_id),
-    constraint fk_checkpoint_enum foreign key (enum_id) references enum_master(enum_id)
+    constraint fk_checkpoint_enum foreign key (enum_id) references checkpoint_enum_master(enum_id)
 );

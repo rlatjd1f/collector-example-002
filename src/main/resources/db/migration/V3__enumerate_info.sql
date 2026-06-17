@@ -1,6 +1,6 @@
-INSERT INTO enum_master (enum_id, enum_name) VALUES
+INSERT INTO checkpoint_enum_master (enum_id, enum_name) VALUES
  (1, "Update Rate");
 
-INSERT INTO enum_detail(enum_id, enum_code, enum_detail_name) VALUES
+INSERT INTO checkpoint_enum_infos(enum_id, enum_code, enum_value) VALUES
  (1, 0, "End of Sub-Interval"),
  (1, 1, "Every Second");

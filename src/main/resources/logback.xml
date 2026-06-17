@@ -2,7 +2,7 @@
 <configuration>
     <!-- 스프링 부트 기본 표준 로그 패턴으로 변경 -->
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5level --- [%thread] %-40logger{36} : %msg%n"/>
+              value="%d{HH:mm:ss.SSS} %5level --- [%thread] %-40logger{36} [%class:%line] : %msg%n"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>

@@ -4,6 +4,7 @@ import com.example.collectorexample002.db.record.Checkpoints;
 import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
 import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
+import com.example.collectorexample002.protocol.modbus.ModbusExceptionCode;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -35,25 +36,39 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         log.debug("channelRead txId: {}, protocolId: {}, length: {}, unitId: {}", txId, protocolId, length, unitId);
 
         try {
-            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.get(txId);
+
+            // channelRead0 진입 이후 즉시 Map 에서 삭제하면서 CheckpointRequest 반환
+            CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
 
             if (pendingRequest == null) {
-                log.warn("TxId {} 에 매칭되는 요청 레지스터를 찾을수 없음, 데이터 스킵", txId);
+                log.warn("TxId {} 에 매칭되는 요청이 없거나 타임아웃 종료", txId);
                 payload.skipBytes(length - 1);
                 return;
             }
 
+            // 요청시 사용한 future 객체
+            CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
+
+            // function code 에러코드 검사
             int functionCode = payload.readUnsignedByte();
-            // modbus 응답 예외 처리
             if ((functionCode & 0x80) == 0x80) {
                 int exceptionCode = payload.readUnsignedByte();
-                log.error("Modbus 슬레이브 에러 응답 수신, ErrorCode = {}", exceptionCode);
+                log.error("Modbus function code 에러, ErrorCode = [{}] - {}", exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
+
+                if (responseFuture != null && !responseFuture.isDone()){
+                    responseFuture.completeExceptionally(new RuntimeException("function code error: " + exceptionCode));
+                }
                 return;
             }
 
+            // header length, byte count 유효성 검사
             int byteCount = payload.readUnsignedByte();
             if (length - 3 != byteCount) {
                 log.error("length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
+
+                if (responseFuture != null && !responseFuture.isDone()){
+                    responseFuture.completeExceptionally(new IllegalArgumentException("packet length, byte count compare error"));
+                }
                 return;
             }
 
@@ -62,8 +77,6 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             // 요청시 사용했던 레지스터 리스트 정보
             List<Checkpoints> checkpoints = pendingRequest.registers();
             parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
-
-            CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
 
             if (responseFuture != null && !responseFuture.isDone()) {
                 // 파싱 완료후 비동기 완료처리

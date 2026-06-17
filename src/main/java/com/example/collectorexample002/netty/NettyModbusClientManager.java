@@ -61,7 +61,6 @@ public class NettyModbusClientManager {
 
     /**
      * 대상 장비에 접속 요청하는 메서드
-     * @param device 장비 정보 레코드
      */
     public void connect(Device device) {
         String host = device.deviceHost();
@@ -98,10 +97,6 @@ public class NettyModbusClientManager {
 
     /**
      * 수집 작업 설정 메서드
-     * @param channel
-     * @param device
-     * @param readBlocks
-     * @param enumMap
      */
     public void polling(Channel channel, Device device, Map<Integer, List<Checkpoints>> readBlocks, Map<Long, Map<Integer, String>> enumMap) {
 
@@ -113,43 +108,48 @@ public class NettyModbusClientManager {
         }
 
         log.info("디바이스 [{}] 폴링 작업 시작", device.deviceName());
-
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-
         channel.attr(ChannelAttributes.ENUM_MAP).set(enumMap);
 
-        channel.eventLoop().execute(() -> {
-            readBlocks.forEach((txId, checkpoints) -> {
-                sendModbusRequest(channel, device.unitId(), checkpoints, txId)
-                        .thenAccept(payload -> {
-                            try {
-                                log.info("[수신 완료] checkpoint start address = {}, count = {}", checkpoints.get(0).checkpointAddress(), checkpoints.size());
-                            } finally {
-                                payload.release();
-                            }
-                        })
-                        .exceptionally(ex -> {
-                            log.error("checkpoint address = {} 수집 실패, {}", checkpoints.get(0).checkpointAddress(), ex.getMessage());
-                            return null;
-                        });
-            });
+        // 비동기 작업 응답 수신을 위한 future 리스트
+        List<CompletableFuture<Void>> futureTasks = new ArrayList<>();
+
+        // 루프 돌면서 전송 메서드의 리턴인 future 객체를 리스트에 저장
+        readBlocks.forEach((txId, checkpoints) -> {
+            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, device.unitId(), checkpoints, txId)
+                    .thenAccept(payload -> {
+                        try {
+                            log.info("[{}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).checkpointAddress(), checkpoints.size());
+                        } finally {
+                            payload.release();
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        log.error("[{}] 체크포인트 = {} 수집 실패, {}", txId, checkpoints.get(0).checkpointAddress(), ex.getMessage());
+                        return null;
+                    });
+
+            futureTasks.add(requestFuture);
         });
 
-        // TODO 비동기 응답이 모두 완료되고 newTimeout 을 걸어야 하지 않을까
+        // 모든 CompletableFuture 비동기 작업들이 완료되는지 감시
+        CompletableFuture<Void> allTasksFuture = CompletableFuture.allOf(futureTasks.toArray(new CompletableFuture[0]));
 
-        // polling 작업 재호출을 위한 타이머 등록
-        log.info("디바이스 [{}] {} 초 후에 폴링 작업 실행", device.deviceName(), polling_cycle);
-        hashedWheelTimer.newTimeout(timeout -> polling(channel, device, readBlocks, enumMap), polling_cycle, TimeUnit.SECONDS);
+        // 모든 비동기 작업 응답 완료시 수행
+        allTasksFuture.whenComplete(((unused, throwable) -> {
+            if (throwable != null) {
+                log.error("전체 modbus 수집중 에러 발생");
+            } else {
+                log.info("전체 modbus 수집 완료");
+            }
 
+            // polling 작업 재호출을 위한 타이머 등록
+            log.info("디바이스 [{}] {} 초 후에 폴링 작업 실행", device.deviceName(), polling_cycle);
+            hashedWheelTimer.newTimeout(timeout -> polling(channel, device, readBlocks, enumMap), polling_cycle, TimeUnit.SECONDS);
+        }));
     }
 
     /**
      * modbus tcp 요청 전송 메서드
-     * @param channel
-     * @param unitId
-     * @param checkpoints
-     * @param txId
-     * @return 전송 결과 비동기 future
      */
     private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<Checkpoints> checkpoints, Integer txId) {
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
@@ -177,17 +177,17 @@ public class NettyModbusClientManager {
 
         channel.writeAndFlush(requestBuffer).addListener(writeFuture -> {
             if(!writeFuture.isSuccess()) {
-                // 소켓 전송 실패한 경우 리턴
+                // 소켓 전송 실패한 경우 예외처리
                 CheckpointRequestManager.REQUEST_MAP.remove(txId);
                 future.completeExceptionally(writeFuture.cause());
             }
         });
 
-        // 일정시간 응답 오지 않으면 타임아웃 처리
+        // 일정시간 인바운드 핸들러로 응답 오지 않으면 타임아웃 처리
         hashedWheelTimer.newTimeout(timeout -> {
             CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
 
-            // 비동기 응답이 디코딩 단계에서 정상처리 된 경우 remove 되었으므로 null 반환 정상
+            // 인바운드 핸들러로 응답이 온경우 바로 remove 를 수행하므로 null 이면 정상으로 처리
             if (pendingRequest == null) {
                 return;
             }
@@ -202,6 +202,9 @@ public class NettyModbusClientManager {
         return future;
     }
 
+    /**
+     * 체크포인트(레지스터) 연속된 주소를 블록으로 만드는 메서드
+     */
     private Map<Integer, List<Checkpoints>> makeReadBlocks(List<Checkpoints> checkpointsList) {
 
         Map<Integer, List<Checkpoints>> readBlocks = new HashMap<>();
@@ -243,6 +246,9 @@ public class NettyModbusClientManager {
         return readBlocks;
     }
 
+    /**
+     * transaction Id 생성 메서드
+     */
     private Integer generateTxId() {
         // transactionId 생성 0~65535 반복
         return transactionIdGenerator.incrementAndGet() & 0xFFFF;

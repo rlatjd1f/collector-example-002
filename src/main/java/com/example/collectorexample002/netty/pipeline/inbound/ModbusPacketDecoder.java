@@ -1,13 +1,14 @@
-package com.example.collectorexample002.netty.pipeline;
+package com.example.collectorexample002.netty.pipeline.inbound;
 
 import com.example.collectorexample002.db.record.Checkpoints;
-import com.example.collectorexample002.checkpoint.CheckpointRequestManager;
-import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
+import com.example.collectorexample002.request.CheckpointRequestManager;
+import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
 import com.example.collectorexample002.protocol.modbus.ModbusExceptionCode;
+import com.example.collectorexample002.request.record.ParseData;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,10 +26,15 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
+public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, ByteBuf payload) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+
+        if (!(msg instanceof ByteBuf payload)) {
+            ctx.fireChannelRead(msg);
+            return;
+        }
 
         int txId = payload.readUnsignedShort();
         int protocolId = payload.readUnsignedShort();
@@ -56,7 +63,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 log.error("Modbus function code 에러, ErrorCode = [{}] - {}", exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
 
                 if (responseFuture != null && !responseFuture.isDone()){
-                    responseFuture.completeExceptionally(new RuntimeException("function code error: " + exceptionCode));
+                    responseFuture.completeExceptionally(new RuntimeException("function code 오류: " + exceptionCode));
                 }
                 return;
             }
@@ -67,7 +74,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 log.error("length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
 
                 if (responseFuture != null && !responseFuture.isDone()){
-                    responseFuture.completeExceptionally(new IllegalArgumentException("packet length, byte count compare error"));
+                    responseFuture.completeExceptionally(new IllegalArgumentException("헤더 length, byte count 비교 검증 오류"));
                 }
                 return;
             }
@@ -76,21 +83,34 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
             // 요청시 사용했던 레지스터 리스트 정보
             List<Checkpoints> checkpoints = pendingRequest.registers();
-            parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
+            String deviceName = pendingRequest.deviceName();
+
+            // 다음 핸들러에 전달하기 위한 리스트 반환
+            List<ParseData> parseDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMap, deviceName);
+
+            if (parseDataList == null) {
+                log.error("payload 파싱 실패 오류");
+                if (responseFuture != null && !responseFuture.isDone()) {
+                    responseFuture.completeExceptionally(new IllegalArgumentException("payload 파싱 실패 오류"));
+                }
+            }
 
             if (responseFuture != null && !responseFuture.isDone()) {
                 // 파싱 완료후 비동기 완료처리
-                CheckpointRequestManager.REQUEST_MAP.remove(txId);
                 responseFuture.complete(payload.retain());
+                ctx.fireChannelRead(parseDataList);
             }
 
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            payload.release();
         }
     }
 
-    private void parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
+    private List<ParseData> parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap, String deviceName) {
 
+        List<ParseData> parseDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
@@ -105,7 +125,7 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 if (payload.readerIndex() < endReadIndex) {
                     payload.skipBytes(endReadIndex - payload.readerIndex());
                 }
-                return;
+                return null;
             }
 
             Object parsedValue = null;
@@ -166,6 +186,16 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             } else {
                 // todo 파싱 실패
             }
+
+            parseDataList.add(new ParseData(
+                    deviceName,
+                    checkpoint.checkpointId(),
+                    checkpoint.checkpointAddress(),
+                    checkpoint.description(),
+                    checkpoint.dataType(),
+                    checkpoint.dataUnit(),
+                    parsedValue
+            ));
         }
 
         // 잔여 바이트 제거
@@ -173,6 +203,8 @@ public class ModbusPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             int skipBytes = endReadIndex - payload.readerIndex();
             payload.skipBytes(skipBytes);
         }
+
+        return parseDataList;
     }
 
     private float wordSwap(ByteBuf payload) {

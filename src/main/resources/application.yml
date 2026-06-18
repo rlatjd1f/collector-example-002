@@ -11,6 +11,21 @@ spring:
     validate-on-migrate: true
     validate-migration-naming: true
     clean-disabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: collector-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-serializer: org.apache.kafka.common.serialization.StringDeserializer
+
 collector:
   polling_cycle: 10
   connection_timeout: 5

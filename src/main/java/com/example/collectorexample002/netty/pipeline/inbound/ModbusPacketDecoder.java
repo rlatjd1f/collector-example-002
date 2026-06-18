@@ -5,6 +5,7 @@ import com.example.collectorexample002.request.CheckpointRequestManager;
 import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
 import com.example.collectorexample002.protocol.modbus.ModbusExceptionCode;
+import com.example.collectorexample002.request.record.DataLogRequest;
 import com.example.collectorexample002.request.record.ParseData;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -86,7 +87,8 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             String deviceName = pendingRequest.deviceName();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
-            List<ParseData> parseDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMap, deviceName);
+            List<ParseData> parseDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
+            DataLogRequest dataLogRequest = new DataLogRequest(deviceName, parseDataList);
 
             if (parseDataList == null) {
                 log.error("payload 파싱 실패 오류");
@@ -98,7 +100,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             if (responseFuture != null && !responseFuture.isDone()) {
                 // 파싱 완료후 비동기 완료처리
                 responseFuture.complete(payload.retain());
-                ctx.fireChannelRead(parseDataList);
+                ctx.fireChannelRead(dataLogRequest);
             }
 
         } catch (Exception e) {
@@ -108,7 +110,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<ParseData> parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap, String deviceName) {
+    private List<ParseData> parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
 
         List<ParseData> parseDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
@@ -188,13 +190,13 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             }
 
             parseDataList.add(new ParseData(
-                    deviceName,
                     checkpoint.checkpointId(),
                     checkpoint.checkpointAddress(),
                     checkpoint.description(),
                     checkpoint.dataType(),
                     checkpoint.dataUnit(),
-                    parsedValue
+                    parsedValue,
+                    LocalDateTime.now()
             ));
         }
 

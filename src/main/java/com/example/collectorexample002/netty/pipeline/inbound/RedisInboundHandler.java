@@ -1,7 +1,9 @@
 package com.example.collectorexample002.netty.pipeline.inbound;
 
+import com.example.collectorexample002.request.record.DataLogRequest;
 import com.example.collectorexample002.request.record.ParseData;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,31 +14,48 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @RequiredArgsConstructor
-public class RedisInboundHandler extends SimpleChannelInboundHandler<List<ParseData>> {
+public class RedisInboundHandler extends ChannelInboundHandlerAdapter {
 
+    private final static String REDIS_KEY_FORMAT = "CHECK_POINT_%s";
     private final RedisTemplate<String, Object> redisTemplate;
-
-    private final static String REDIS_KEY = "CHECK_POINT_%s";
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, List<ParseData> parseDataList) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
 
-        parseDataList.forEach(parseData -> {
-            log.info("[{}:{}] - {} : {}", parseData.checkpointId(), parseData.checkpointAddress(), parseData.description(), parseData.parsedValue());
-        });
+        if(!(msg instanceof DataLogRequest dataLogRequest)) {
+            ctx.fireChannelRead(msg);
+            return;
+        }
+
+        List<ParseData> parseDataList = dataLogRequest.parseDataList();
+        String deviceName = dataLogRequest.deviceName();
+        String redisKey = String.format(REDIS_KEY_FORMAT, deviceName);
 
         Map<String, Object> payloadBody = new HashMap<>();
-
-        payloadBody.put("collectedAt", LocalDateTime.now().toString());
-
         parseDataList.forEach(parseData -> {
             String fieldKey = String.valueOf(parseData.checkpointAddress());
-            String jsonValue = new ObjectMapper().writeValueAsString(parseData);
-            payloadBody.put(fieldKey, jsonValue);
-            log.info("[CACHE_DATA]\n{}", jsonValue);
+            payloadBody.put(fieldKey, objectMapper.writeValueAsString(parseData));
         });
+
+        // Redis 저장 작업 비동기로 실행
+        try {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    redisTemplate.opsForHash().putAll(redisKey, payloadBody);
+                    log.info("redis 저장 성공, key: {}, value count: {}", redisKey, parseDataList.size());
+                } catch (Exception e) {
+                    log.error("redis 저장 오류", e);
+                }
+            });
+        } catch (Exception e) {
+            log.error("json 변환 에러", e);
+        }
+
+        ctx.fireChannelRead(dataLogRequest);
     }
 }

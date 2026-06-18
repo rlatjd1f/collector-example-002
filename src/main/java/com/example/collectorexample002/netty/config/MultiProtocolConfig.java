@@ -1,5 +1,6 @@
 package com.example.collectorexample002.netty.config;
 
+import com.example.collectorexample002.netty.pipeline.inbound.KafkaInboundHandler;
 import com.example.collectorexample002.netty.pipeline.inbound.ModbusPacketDecoder;
 import com.example.collectorexample002.netty.pipeline.inbound.RedisInboundHandler;
 import io.netty.bootstrap.Bootstrap;
@@ -12,11 +13,15 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timer;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 public class MultiProtocolConfig {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     @Bean(destroyMethod = "shutdownGracefully")
     public EventLoopGroup sharedWorkerGroup() {
@@ -46,6 +52,7 @@ public class MultiProtocolConfig {
                                 260, 4,2,0,0));
                         ch.pipeline().addLast("ModbusPacketDecoder", new ModbusPacketDecoder());
                         ch.pipeline().addLast("RedisInboundHandler", new RedisInboundHandler(redisTemplate));
+                        ch.pipeline().addLast("KafkaInboundHandler", new KafkaInboundHandler(kafkaTemplate));
                     }
                 });
 

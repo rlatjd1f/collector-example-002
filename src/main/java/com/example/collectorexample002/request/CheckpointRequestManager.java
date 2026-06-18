@@ -1,6 +1,6 @@
-package com.example.collectorexample002.checkpoint;
+package com.example.collectorexample002.request;
 
-import com.example.collectorexample002.checkpoint.record.CheckpointRequest;
+import com.example.collectorexample002.request.record.CheckpointRequest;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

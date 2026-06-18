@@ -1,4 +1,4 @@
-package com.example.collectorexample002.netty;
+package com.example.collectorexample002.netty.pipeline.client;
 
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.EnumJdbcRepository;
@@ -111,10 +111,10 @@ public class NettyModbusClientManager {
 
         // 루프 돌면서 전송 메서드의 리턴인 future 객체를 리스트에 저장
         readBlocks.forEach((txId, checkpoints) -> {
-            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, device.unitId(), checkpoints, txId)
+            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, device.unitId(), checkpoints, txId, device.deviceName())
                     .thenAccept(payload -> {
                         try {
-                            log.info("[{}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).checkpointAddress(), checkpoints.size());
+                            log.info("[TX: {}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).checkpointAddress(), checkpoints.size());
                         } finally {
                             payload.release();
                         }
@@ -147,11 +147,11 @@ public class NettyModbusClientManager {
     /**
      * modbus tcp 요청 전송 메서드
      */
-    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<Checkpoints> checkpoints, Integer txId) {
+    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<Checkpoints> checkpoints, Integer txId, String deviceName) {
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
 
         // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 checkpoint 정보 전달
-        CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, checkpoints));
+        CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, checkpoints, deviceName));
         // 연속된 레지스터들의 시작 주소
         int checkpointAddress = checkpoints.get(0).checkpointAddress();
         // 연속된 레지스터들의 카운트 합

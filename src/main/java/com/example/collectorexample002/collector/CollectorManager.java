@@ -2,7 +2,7 @@ package com.example.collectorexample002.collector;
 
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.record.Device;
-import com.example.collectorexample002.netty.NettyModbusClientManager;
+import com.example.collectorexample002.netty.pipeline.client.NettyModbusClientManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;

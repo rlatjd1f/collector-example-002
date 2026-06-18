@@ -11,6 +11,7 @@ public class CheckpointsRowMapper implements RowMapper<Checkpoints> {
     public Checkpoints mapRow(ResultSet rs, int rowNum) throws SQLException {
 
         return new Checkpoints(
+                rs.getLong("checkpoint_id"),
                 rs.getInt("checkpoint_address"),
                 rs.getInt("checkpoint_count"),
                 rs.getString("data_type"),

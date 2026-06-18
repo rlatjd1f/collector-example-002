@@ -26,7 +26,7 @@ public class DeviceJdbcRepository {
     }
 
     public List<Checkpoints> findCheckpointByDeviceId(Long deviceId) {
-        String sql = "Select checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description \n" +
+        String sql = "Select checkpoint_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description \n" +
                    " from checkpoints where device_id = :device_id";
 
         MapSqlParameterSource params = new MapSqlParameterSource()

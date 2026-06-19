@@ -1,6 +1,6 @@
 package com.example.collectorexample002.netty.pipeline.inbound;
 
-import com.example.collectorexample002.db.record.Checkpoints;
+import com.example.collectorexample002.db.record.CheckpointModbus;
 import com.example.collectorexample002.request.CheckpointRequestManager;
 import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
@@ -28,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @RequiredArgsConstructor
 public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
+
+    private static final String PROTOCOL_NAME = "MODBUS";
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
@@ -83,12 +85,12 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             Map<Long, Map<Integer, String>> enumMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
             // 요청시 사용했던 레지스터 리스트 정보
-            List<Checkpoints> checkpoints = pendingRequest.registers();
+            List<CheckpointModbus> checkpoints = pendingRequest.registers();
             String deviceName = pendingRequest.deviceName();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
             List<ParseData> parseDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
-            DataLogRequest dataLogRequest = new DataLogRequest(deviceName, parseDataList);
+            DataLogRequest dataLogRequest = new DataLogRequest(deviceName, PROTOCOL_NAME, parseDataList);
 
             if (parseDataList == null) {
                 log.error("payload 파싱 실패 오류");
@@ -110,13 +112,13 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<ParseData> parsePayloads(ByteBuf payload, List<Checkpoints> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
+    private List<ParseData> parsePayloads(ByteBuf payload, List<CheckpointModbus> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
 
         List<ParseData> parseDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
-        for (Checkpoints checkpoint : checkpoints) {
+        for (CheckpointModbus checkpoint : checkpoints) {
 
             // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
             int requireBytes = checkpoint.checkpointCount() * 2;
@@ -183,21 +185,19 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                         log.info("[체크포인트 수집 {}] {} => {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedEnumName);
                     }
                 }
-            } else if (parsedValue != null) {
-                log.info("[체크포인트 수집 {}] {} => {} {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, checkpoint.dataUnit());
             } else {
-                // todo 파싱 실패
+                if (parsedValue != null) {
+                    log.info("[체크포인트 수집 {}] {} => {} {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, checkpoint.dataUnit());
+                } else {
+                    log.error("[체크포인트 수집 오류 {}] {}", checkpoint.checkpointAddress(), checkpoint.description());
+                }
             }
 
             parseDataList.add(new ParseData(
-                    checkpoint.checkpointId(),
-                    checkpoint.checkpointAddress(),
-                    checkpoint.description(),
-                    checkpoint.dataType(),
-                    checkpoint.dataUnit(),
-                    parsedValue,
-                    LocalDateTime.now()
-            ));
+            checkpoint.checkpointId(),
+            checkpoint.checkpointAddress(),
+            parsedValue,
+            LocalDateTime.now()));
         }
 
         // 잔여 바이트 제거

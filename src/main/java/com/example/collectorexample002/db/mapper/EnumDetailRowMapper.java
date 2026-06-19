@@ -1,16 +1,16 @@
 package com.example.collectorexample002.db.mapper;
 
-import com.example.collectorexample002.db.record.EnumDetail;
+import com.example.collectorexample002.db.record.CheckpointEnumCode;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class EnumDetailRowMapper implements RowMapper<EnumDetail> {
+public class EnumDetailRowMapper implements RowMapper<CheckpointEnumCode> {
     @Override
-    public EnumDetail mapRow(ResultSet rs, int rowNum) throws SQLException {
+    public CheckpointEnumCode mapRow(ResultSet rs, int rowNum) throws SQLException {
 
-        return new EnumDetail(
+        return new CheckpointEnumCode(
                 rs.getLong("enum_id"),
                 rs.getInt("enum_code"),
                 rs.getString("enum_value")

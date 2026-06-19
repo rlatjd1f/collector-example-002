@@ -1,16 +1,16 @@
 package com.example.collectorexample002.db.mapper;
 
-import com.example.collectorexample002.db.record.Checkpoints;
+import com.example.collectorexample002.db.record.CheckpointModbus;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class CheckpointsRowMapper implements RowMapper<Checkpoints> {
+public class CheckpointsRowMapper implements RowMapper<CheckpointModbus> {
     @Override
-    public Checkpoints mapRow(ResultSet rs, int rowNum) throws SQLException {
+    public CheckpointModbus mapRow(ResultSet rs, int rowNum) throws SQLException {
 
-        return new Checkpoints(
+        return new CheckpointModbus(
                 rs.getLong("checkpoint_id"),
                 rs.getInt("checkpoint_address"),
                 rs.getInt("checkpoint_count"),

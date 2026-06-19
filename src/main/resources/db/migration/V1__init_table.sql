@@ -22,7 +22,7 @@ create table checkpoint_enum_master (
     primary key (enum_id)
 );
 
-create table checkpoint_enum_infos (
+create table checkpoint_enum_code (
     enum_id     bigint not null,
     enum_code   int not null,
     enum_value  varchar(100),
@@ -30,7 +30,8 @@ create table checkpoint_enum_infos (
     constraint fk_enum_detail_master foreign key (enum_id) references checkpoint_enum_master(enum_id) on delete cascade
 );
 
-create table checkpoints (
+-- modbus 전용 체크포인트 테이블
+create table checkpoint_modbus (
     device_id           bigint,
     checkpoint_id         bigint auto_increment not null,
     checkpoint_address    int unsigned not null,

@@ -1,6 +1,6 @@
 package com.example.collectorexample002.db.record;
 
-public record Checkpoints(
+public record CheckpointModbus(
         Long checkpointId,
         int checkpointAddress,
         int checkpointCount,

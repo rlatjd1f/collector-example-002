@@ -2,11 +2,11 @@ package com.example.collectorexample002.netty.pipeline.client;
 
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.EnumJdbcRepository;
-import com.example.collectorexample002.db.record.Checkpoints;
+import com.example.collectorexample002.db.record.CheckpointModbus;
 import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.request.CheckpointRequestManager;
 import com.example.collectorexample002.db.record.Device;
-import com.example.collectorexample002.db.record.EnumDetail;
+import com.example.collectorexample002.db.record.CheckpointEnumCode;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -64,7 +64,7 @@ public class NettyModbusClientManager {
 
         log.info("디바이스 연결 시도 [{}]( {}:{} )...", device.deviceName(), host, port);
 
-        List<Checkpoints> checkpoints = deviceJdbcRepository.findCheckpointByDeviceId(device.deviceId());
+        List<CheckpointModbus> checkpoints = deviceJdbcRepository.findCheckpointByDeviceId(device.deviceId());
         if (checkpoints.isEmpty()) {
             // 디바이스에 등록된 레지스터 정보가 없으면 폴링할 정보가 없다는뜻
             log.warn("{} 디바이스에 등록된 레지스터 정보가 없음, 종료", device.deviceName());
@@ -74,11 +74,11 @@ public class NettyModbusClientManager {
         // 체크포인트 enum 타입과 매핑할 enum 테이블 조회
         Map<Long, Map<Integer, String>> enumMap = enumJdbcRepository.findAllEnumDetail()
                 .stream()
-                .collect(Collectors.groupingBy(EnumDetail::enumId,
-                        Collectors.toMap(EnumDetail::enumCode, EnumDetail::enumDetailName)));
+                .collect(Collectors.groupingBy(CheckpointEnumCode::enumId,
+                        Collectors.toMap(CheckpointEnumCode::enumCode, CheckpointEnumCode::enumValue)));
 
         // 연속된 주소로 요청가능한 레지스터들을 블록단위로 생성
-        Map<Integer, List<Checkpoints>> readBlocks = makeReadBlocks(checkpoints);
+        Map<Integer, List<CheckpointModbus>> readBlocks = makeReadBlocks(checkpoints);
 
         modbusBootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
@@ -94,7 +94,7 @@ public class NettyModbusClientManager {
     /**
      * 수집 작업 설정 메서드
      */
-    public void polling(Channel channel, Device device, Map<Integer, List<Checkpoints>> readBlocks, Map<Long, Map<Integer, String>> enumMap) {
+    public void polling(Channel channel, Device device, Map<Integer, List<CheckpointModbus>> readBlocks, Map<Long, Map<Integer, String>> enumMap) {
 
         // tcp 연결 체크
         if(!channel.isActive()) {
@@ -147,7 +147,7 @@ public class NettyModbusClientManager {
     /**
      * modbus tcp 요청 전송 메서드
      */
-    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<Checkpoints> checkpoints, Integer txId, String deviceName) {
+    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<CheckpointModbus> checkpoints, Integer txId, String deviceName) {
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
 
         // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 checkpoint 정보 전달
@@ -155,7 +155,7 @@ public class NettyModbusClientManager {
         // 연속된 레지스터들의 시작 주소
         int checkpointAddress = checkpoints.get(0).checkpointAddress();
         // 연속된 레지스터들의 카운트 합
-        int checkpointCount = checkpoints.stream().mapToInt(Checkpoints::checkpointCount).sum();
+        int checkpointCount = checkpoints.stream().mapToInt(CheckpointModbus::checkpointCount).sum();
 
         // Modbus TCP MBAP Header + PDU
         ByteBuf requestBuffer = channel.alloc().buffer(12);
@@ -201,10 +201,10 @@ public class NettyModbusClientManager {
     /**
      * 체크포인트(레지스터) 연속된 주소를 블록으로 만드는 메서드
      */
-    private Map<Integer, List<Checkpoints>> makeReadBlocks(List<Checkpoints> checkpointsList) {
+    private Map<Integer, List<CheckpointModbus>> makeReadBlocks(List<CheckpointModbus> checkpointModbusList) {
 
-        Map<Integer, List<Checkpoints>> readBlocks = new HashMap<>();
-        List<Checkpoints> blockRegisters = new ArrayList<>();
+        Map<Integer, List<CheckpointModbus>> readBlocks = new HashMap<>();
+        List<CheckpointModbus> blockRegisters = new ArrayList<>();
 
         int currentAddress;
         int currentCount;
@@ -213,15 +213,15 @@ public class NettyModbusClientManager {
 
         int requestCount;
 
-        for (Checkpoints checkpoints : checkpointsList) {
+        for (CheckpointModbus checkpointModbus : checkpointModbusList) {
 
-            currentAddress = checkpoints.checkpointAddress();
-            currentCount = checkpoints.checkpointCount();
+            currentAddress = checkpointModbus.checkpointAddress();
+            currentCount = checkpointModbus.checkpointCount();
             requestCount = blockRegisters.size();
 
             if (requestCount == 0) {
                 // 첫 레지스터는 블록의 시작
-                blockRegisters.add(checkpoints);
+                blockRegisters.add(checkpointModbus);
             } else {
                 // 2번째 루프부터 연속성 여부 계산
                 if (currentAddress != lastAddress + lastCount || requestCount == MAX_REQUEST_REGISTERS) {
@@ -230,7 +230,7 @@ public class NettyModbusClientManager {
                     blockRegisters = new ArrayList<>();
                 }
 
-                blockRegisters.add(checkpoints);
+                blockRegisters.add(checkpointModbus);
             }
 
             lastAddress = currentAddress;

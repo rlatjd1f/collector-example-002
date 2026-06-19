@@ -1,8 +1,8 @@
 package com.example.collectorexample002.db.record;
 
-public record EnumDetail(
+public record CheckpointEnumCode(
         Long enumId,
         int enumCode,
-        String enumDetailName
+        String enumValue
 ) {
 }

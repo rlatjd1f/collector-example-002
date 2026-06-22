@@ -6,7 +6,7 @@ import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
 import com.example.collectorexample002.protocol.modbus.ModbusExceptionCode;
 import com.example.collectorexample002.request.record.DataLogRequest;
-import com.example.collectorexample002.request.record.ParseData;
+import com.example.collectorexample002.request.record.CheckpointData;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -40,30 +40,30 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
 
         int txId = payload.readUnsignedShort();
-        int protocolId = payload.readUnsignedShort();
+        payload.readUnsignedShort();    // protocolId
         int length = payload.readUnsignedShort();
-        int unitId = payload.readUnsignedByte();
-        log.debug("channelRead txId: {}, protocolId: {}, length: {}, unitId: {}", txId, protocolId, length, unitId);
+        payload.readUnsignedByte();     // unitId
+        log.info("[ModbusPacketDecoder] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
 
         try {
 
-            // channelRead0 진입 이후 즉시 Map 에서 삭제하면서 CheckpointRequest 반환
+            // channelRead 진입 이후 즉시 Map 에서 삭제하면서 CheckpointRequest 반환
             CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
 
             if (pendingRequest == null) {
-                log.warn("TxId {} 에 매칭되는 요청이 없거나 타임아웃 종료", txId);
+                log.warn("[ModbusPacketDecoder] txId {} 에 매칭되는 요청이 없거나 타임아웃 종료", txId);
                 payload.skipBytes(length - 1);
                 return;
             }
 
-            // 요청시 사용한 future 객체
+            // 요청시 사용한 CompletableFuture 객체
             CompletableFuture<ByteBuf> responseFuture = pendingRequest.future();
 
             // function code 에러코드 검사
             int functionCode = payload.readUnsignedByte();
             if ((functionCode & 0x80) == 0x80) {
                 int exceptionCode = payload.readUnsignedByte();
-                log.error("Modbus function code 에러, ErrorCode = [{}] - {}", exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
+                log.error("[ModbusPacketDecoder] Modbus function code 에러, ErrorCode = [{}] - {}", exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
 
                 if (responseFuture != null && !responseFuture.isDone()){
                     responseFuture.completeExceptionally(new RuntimeException("function code 오류: " + exceptionCode));
@@ -74,7 +74,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             // header length, byte count 유효성 검사
             int byteCount = payload.readUnsignedByte();
             if (length - 3 != byteCount) {
-                log.error("length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
+                log.error("[ModbusPacketDecoder] length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
 
                 if (responseFuture != null && !responseFuture.isDone()){
                     responseFuture.completeExceptionally(new IllegalArgumentException("헤더 length, byte count 비교 검증 오류"));
@@ -82,24 +82,24 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                 return;
             }
 
-            Map<Long, Map<Integer, String>> enumMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
+            Map<Long, Map<Integer, String>> enumMasterMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
             // 요청시 사용했던 레지스터 리스트 정보
             List<CheckpointModbus> checkpoints = pendingRequest.registers();
-            String deviceName = pendingRequest.deviceName();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
-            List<ParseData> parseDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMap);
-            DataLogRequest dataLogRequest = new DataLogRequest(deviceName, PROTOCOL_NAME, parseDataList);
+            List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMasterMap);
 
-            if (parseDataList == null) {
-                log.error("payload 파싱 실패 오류");
+            if (checkpointDataList == null) {
                 if (responseFuture != null && !responseFuture.isDone()) {
                     responseFuture.completeExceptionally(new IllegalArgumentException("payload 파싱 실패 오류"));
                 }
             }
 
             if (responseFuture != null && !responseFuture.isDone()) {
+                String deviceName = pendingRequest.deviceName();
+                DataLogRequest dataLogRequest = new DataLogRequest(deviceName, PROTOCOL_NAME, checkpointDataList);
+
                 // 파싱 완료후 비동기 완료처리
                 responseFuture.complete(payload.retain());
                 ctx.fireChannelRead(dataLogRequest);
@@ -112,9 +112,9 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<ParseData> parsePayloads(ByteBuf payload, List<CheckpointModbus> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMap) {
+    private List<CheckpointData> parsePayloads(ByteBuf payload, List<CheckpointModbus> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
 
-        List<ParseData> parseDataList = new ArrayList<>();
+        List<CheckpointData> checkpointDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
@@ -133,7 +133,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             }
 
             Object parsedValue = null;
-            Optional<String> parsedEnumName;
+            Optional<String> parsedEnumValue;
             String type = checkpoint.dataType().toUpperCase();
 
             switch (type) {
@@ -174,26 +174,31 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                 }
             }
 
-            // enum 파싱
-            if (checkpoint.valueType().equals("enum")) {
-                if (parsedValue instanceof Number numValue)
-                {
-                    Map<Integer, String> integerStringMap = enumMap.get(checkpoint.enumId());
-                    parsedEnumName = Optional.ofNullable(integerStringMap.get(numValue.intValue()));
+            if (parsedValue != null) {
+                // enum 타입 처리
+                if (checkpoint.valueType().equals("enum")) {
+                    if (parsedValue instanceof Number numValue)
+                    {
+                        Map<Integer, String> enumCodeMap = enumMasterMap.get(checkpoint.enumId());
+                        parsedEnumValue = Optional.ofNullable(enumCodeMap.get(numValue.intValue()));
 
-                    if (parsedEnumName.isPresent()) {
-                        log.info("[체크포인트 수집 {}] {} => {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedEnumName);
+                        if (parsedEnumValue.isPresent()) {
+                            log.info("[ModbusPacketDecoder] address: {}, desc: {}, value: {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedEnumValue);
+                        } else {
+                            log.warn("[ModbusPacketDecoder] address: {}, 올바르지 않은 enum 정보, enum id: {}, value: {}", checkpoint.checkpointAddress(), checkpoint.enumId(), parsedValue);
+                            continue;
+                        }
                     }
+                } else {
+                    log.info("[ModbusPacketDecoder] address: {}, desc: {}, value: {} {}",
+                            checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
                 }
             } else {
-                if (parsedValue != null) {
-                    log.info("[체크포인트 수집 {}] {} => {} {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, checkpoint.dataUnit());
-                } else {
-                    log.error("[체크포인트 수집 오류 {}] {}", checkpoint.checkpointAddress(), checkpoint.description());
-                }
+                log.warn("[ModbusPacketDecoder] address: {}, desc: {}", checkpoint.checkpointAddress(), checkpoint.description());
+                continue;
             }
 
-            parseDataList.add(new ParseData(
+            checkpointDataList.add(new CheckpointData(
             checkpoint.checkpointId(),
             checkpoint.checkpointAddress(),
             parsedValue,
@@ -206,7 +211,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             payload.skipBytes(skipBytes);
         }
 
-        return parseDataList;
+        return checkpointDataList;
     }
 
     private float wordSwap(ByteBuf payload) {

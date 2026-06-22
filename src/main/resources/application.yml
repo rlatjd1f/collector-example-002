@@ -29,4 +29,4 @@ spring:
 collector:
   polling_cycle: 10
   connection_timeout: 5
-  response_timeout: 3
+  response_timeout: 5

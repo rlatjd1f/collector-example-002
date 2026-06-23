@@ -29,8 +29,6 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
-    private static final String PROTOCOL_NAME = "MODBUS";
-
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
 
@@ -40,7 +38,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
 
         int txId = payload.readUnsignedShort();
-        payload.readUnsignedShort();    // protocolId
+        payload.readUnsignedShort();    // interfaceId
         int length = payload.readUnsignedShort();
         payload.readUnsignedByte();     // unitId
         log.info("[ModbusPacketDecoder] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
@@ -97,8 +95,9 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             }
 
             if (responseFuture != null && !responseFuture.isDone()) {
-                String deviceName = pendingRequest.deviceName();
-                DataLogRequest dataLogRequest = new DataLogRequest(deviceName, PROTOCOL_NAME, checkpointDataList);
+                Long deviceId = pendingRequest.deviceInterface().deviceId();
+                Long interfaceId = pendingRequest.deviceInterface().interfaceId();
+                DataLogRequest dataLogRequest = new DataLogRequest(deviceId, interfaceId, checkpointDataList);
 
                 // 파싱 완료후 비동기 완료처리
                 responseFuture.complete(payload.retain());
@@ -183,18 +182,18 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                         parsedEnumValue = Optional.ofNullable(enumCodeMap.get(numValue.intValue()));
 
                         if (parsedEnumValue.isPresent()) {
-                            log.info("[ModbusPacketDecoder] address: {}, desc: {}, value: {}", checkpoint.checkpointAddress(), checkpoint.description(), parsedEnumValue);
+                            log.info("[ModbusPacketDecoder] checkpoint_id: {}, desc: {}, value: {}", checkpoint.checkpointId(), checkpoint.description(), parsedEnumValue);
                         } else {
-                            log.warn("[ModbusPacketDecoder] address: {}, 올바르지 않은 enum 정보, enum id: {}, value: {}", checkpoint.checkpointAddress(), checkpoint.enumId(), parsedValue);
+                            log.warn("[ModbusPacketDecoder] checkpoint_id: {}, 올바르지 않은 enum 정보, enum id: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
                             continue;
                         }
                     }
                 } else {
-                    log.info("[ModbusPacketDecoder] address: {}, desc: {}, value: {} {}",
-                            checkpoint.checkpointAddress(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
+                    log.info("[ModbusPacketDecoder] checkpoint_id: {}, desc: {}, value: {} {}",
+                            checkpoint.checkpointId(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
                 }
             } else {
-                log.warn("[ModbusPacketDecoder] address: {}, desc: {}", checkpoint.checkpointAddress(), checkpoint.description());
+                log.warn("[ModbusPacketDecoder] checkpoint_id: {}, desc: {}", checkpoint.checkpointId(), checkpoint.description());
                 continue;
             }
 

@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- 스프링 부트 기본 표준 로그 패턴으로 변경 -->
-<!--    <property name="LOG_PATTERN" value="%d{HH:mm:ss.SSS} %5level -&#45;&#45; [%thread] %-40logger{36} [%class:%line] : %msg%n"/>-->
     <property name="LOG_PATTERN" value="%d{HH:mm:ss.SSS} --- %-40logger{36} : %msg%n"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -17,6 +15,24 @@
             <pattern>${LOG_PATTERN}</pattern>
         </encoder>
     </appender>
+
+    <appender name="KAFKA_FAIL_APPENDER" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/fail/kafka_fail.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/fail/kafka_fail_%d{yyyyMMddHHmm}_%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="KAFKA_FAIL_LOGGER" level="INFO" additivity="false">
+        <appender-ref ref="KAFKA_FAIL_APPENDER" />
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

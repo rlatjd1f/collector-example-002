@@ -1,7 +1,9 @@
 package com.example.collectorexample002.db.record;
 
-public record Device(
+public record DeviceInterface(
         Long deviceId,
+        Long protocolId,
+        Long interfaceId,
         String protocolName,
         int unitId,
         String deviceName,

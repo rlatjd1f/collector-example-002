@@ -1,22 +1,24 @@
 package com.example.collectorexample002.db.mapper;
 
-import com.example.collectorexample002.db.record.Device;
+import com.example.collectorexample002.db.record.DeviceInterface;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class DeviceRowMapper implements RowMapper<Device> {
+public class DeviceRowMapper implements RowMapper<DeviceInterface> {
     @Override
-    public Device mapRow(ResultSet rs, int rowNum) throws SQLException {
+    public DeviceInterface mapRow(ResultSet rs, int rowNum) throws SQLException {
 
-        return new Device(
+        return new DeviceInterface(
                 rs.getLong("device_id"),
+                rs.getLong("protocol_id"),
+                rs.getLong("interface_id"),
                 rs.getString("protocol_name"),
                 rs.getInt("unit_id"),
                 rs.getString("device_name"),
-                rs.getString("device_host"),
-                rs.getInt("device_port")
+                rs.getString("interface_host"),
+                rs.getInt("interface_port")
         );
     }
 }

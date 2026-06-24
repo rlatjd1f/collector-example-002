@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +24,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Properties;
+import java.util.concurrent.Future;
 
 @Component
 @Slf4j
@@ -75,19 +78,20 @@ public class KafkaDataService {
                     Long interfaceId = request.interfaceId();
 
                     StringBuilder csvBuilder = new StringBuilder();
-                    csvBuilder.append("checkpointId,checkpointAddress,parsedValue,collectedAt")
-                                    .append(System.lineSeparator());
+                    String partitionKey = String.format("%s-%s", deviceId, interfaceId);
+
+                    // 각 라인에 키 + 메시지 구조
                     request.checkpointDataList().forEach(checkpointData -> {
-                        csvBuilder.append(checkpointData.checkpointId()).append(",")
-                                .append(checkpointData.checkpointAddress()).append(",")
-                                .append(checkpointData.parsedValue()).append(",")
-                                .append(checkpointData.collectedAt())
-                                .append(System.lineSeparator());
+                        csvBuilder.append(partitionKey).append("/")
+                                  .append(checkpointData.checkpointId()).append(",")
+                                  .append(checkpointData.checkpointAddress()).append(",")
+                                  .append(checkpointData.parsedValue()).append(",")
+                                  .append(checkpointData.collectedAt())
+                                  .append(System.lineSeparator());
                     });
 
                     // 파티션키 생성 - 장비id + 인터페이스id 기준으로 동일파티션에 순서보장
-                    String partitionKey = String.format("%s-%s", deviceId, interfaceId);
-                    send(KAFKA_TOPIC, partitionKey, csvBuilder.toString());
+                    sendMessage(KAFKA_TOPIC, partitionKey, csvBuilder.toString());
 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -103,18 +107,18 @@ public class KafkaDataService {
         workerThread.start();
     }
 
-    public void send(String topic, String key, String message) {
+    public void sendMessage(String topic, String key, String message) {
 
-        // 현재 시간
         long currentTime = System.currentTimeMillis();
 
-        // kafka 다운 상태 유지할동안 file 형태로 저장
         if (isKafkaDown) {
-            // 마지막 다운 시간이후로 KAFKA_SUSPEND_DURATION_MS(10s) 동안 file write 시도
+            // kafka 다운 상태 유지할 KAFKA_SUSPEND_DURATION_MS(10s) 시간동안 fail logger 형태로 저장
             if (currentTime - lastFailureTime < KAFKA_SUSPEND_DURATION_MS) {
-                writeFailedMessageToFile(key, message);
+                writeFailedMessageToFile(message);
                 return;
-            } else {
+            }
+            // KAFKA_SUSPEND_DURATION_MS 시간 이후에 장애 flag 변경하여 kafka 재전송 시도
+            else {
                 log.info("[KAFKA_SEND] 장애 차단시간 만료, kafka 전송 재시도");
                 isKafkaDown = false;
             }
@@ -125,7 +129,7 @@ public class KafkaDataService {
                 if (exception != null) {
                     log.error("[KAFKA_SEND] kafka send 실행 오류, 잔여 queue cnt: {}", queueService.getKafkaQueueSize(), exception);
                     triggerKafkaDown();
-                    writeFailedMessageToFile(key, message);
+                    writeFailedMessageToFile(message);
                 } else {
                     log.info("[KAFKA_SEND] kafka send 성공, 잔여 queue cnt: {},  파티션: {}, 오프셋: {}", queueService.getKafkaQueueSize(), metadata.partition(), metadata.offset());
                 }
@@ -133,15 +137,13 @@ public class KafkaDataService {
         } catch (Exception e) {
             log.error("[KAFKA_SEND] 프로듀서 버퍼 포화상태, 파일 백업, 잔여 queue cnt: {}", queueService.getKafkaQueueSize());
             triggerKafkaDown();
-            writeFailedMessageToFile(key, message);
+            writeFailedMessageToFile(message);
         }
     }
 
-    private void writeFailedMessageToFile(String key, String message) {
-        failLogger.info("{}/{}", key, message);
-        log.info("[KAFKA_SEND] 복구용 file 쓰기 작업 완료, 잔여 queue cnt: {}", queueService.getKafkaQueueSize());
-    }
-
+    /**
+     * kafka 장애 발생시 재처리를 위한 Flag 값 변경
+     */
     private synchronized void triggerKafkaDown() {
         if(!isKafkaDown) {
             isKafkaDown = true;
@@ -150,9 +152,22 @@ public class KafkaDataService {
         }
     }
 
+    /**
+     * kafka 장애 발생시 재처리를 위한 fail logger 작성
+     * @param message
+     */
+    private void writeFailedMessageToFile(String message) {
+        failLogger.info("{}", message);
+        log.info("[KAFKA_SEND] 복구용 file 쓰기 작업 완료, 잔여 queue cnt: {}", queueService.getKafkaQueueSize());
+    }
+
+    /**
+     * 60초 주기로 fail log 로 복구작업을 하기위한 검사
+     */
     @Scheduled(fixedDelay = 60000)
     public void restoreFailData() {
 
+        // kafka 장애상태일 경우 리턴
         if (isKafkaDown) {
             return;
         }
@@ -162,18 +177,23 @@ public class KafkaDataService {
             return;
         }
 
+        // kafka_fail_*.log 형태의 로그파일 검색
         File[] targetFiles = logDir.listFiles((dir, name) -> name.startsWith("kafka_fail_") && name.endsWith(".log"));
 
         if (targetFiles == null || targetFiles.length == 0) {
             return;
         }
 
+        long currentTime = System.currentTimeMillis();
+        long oneMinuteMills = 60 * 1000;
+
         log.info("[KAFKA_RESTORE] kafka 실패데이터 복구 작업 시작, 파일 수: {}", targetFiles.length);
 
         for (File file : targetFiles) {
-            if (isKafkaDown) {
-                log.warn("[KAFKA_RESTORE]  kafka 복구중 오류 발생으로 작업 중단");
-                break;
+
+            // 생성된지 1분미만의 복구 로그는 건너뛰기
+            if (currentTime - file.lastModified() < oneMinuteMills) {
+                continue;
             }
 
             boolean isSuccess = processRestore(file);
@@ -181,6 +201,8 @@ public class KafkaDataService {
             if (isSuccess) {
                 if (file.delete()) {
                     log.info("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 성공 {}", file.getName());
+                } else {
+                    log.warn("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 실패");
                 }
             }
         }
@@ -200,18 +222,26 @@ public class KafkaDataService {
                     continue;
                 }
 
-                String key = line.substring(0, delimiterIdx);
-                String message = line.substring(delimiterIdx+1);
-
                 if(isKafkaDown) {
-                    return false;
+                    throw new KafkaException("kafka 장애 발생");
                 }
 
-                send(KAFKA_TOPIC, key, message);
+                String key = line.substring(0, delimiterIdx);
+                sendMessage(KAFKA_TOPIC, key, line);
             }
+
+            // 잔여 버퍼를 처리하기 위한 flush 호출
+            producer.flush();
+
             return true;
         } catch (IOException e) {
             log.error("[KAFKA_RESTORE] 파일 읽기중 오류 발생", e);
+            return false;
+        } catch (KafkaException e) {
+            log.error("[KAFKA_RESTORE] kafka 장애 발생");
+            return false;
+        } catch (Exception e) {
+            log.error("[KAFKA_RESTORE] 복구 작업중 에러 발생", e);
             return false;
         }
     }

@@ -9,6 +9,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -39,11 +41,16 @@ public class RedisDataService {
                         continue;
                     }
 
+                    RedisSerializer<String> stringRedisSerializer = StringRedisSerializer.UTF_8;
+
                     redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
                         dataList.forEach(data -> {
                             String key = String.format(REDIS_KEY_FORMAT,data.checkpointId());
                             String value = String.valueOf(data.parsedValue());
-                            redisTemplate.opsForValue().set(key,value);
+
+                            byte[] keyBytes = stringRedisSerializer.serialize(key);
+                            byte[] valuesBytes = stringRedisSerializer.serialize(value);
+                            connection.stringCommands().set(keyBytes, valuesBytes);
                         });
                         return null;
                     });

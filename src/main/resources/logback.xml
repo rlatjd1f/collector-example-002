@@ -17,8 +17,6 @@
     </appender>
 
     <appender name="KAFKA_FAIL_APPENDER" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/fail/kafka_fail.log</file>
-
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>logs/fail/kafka_fail_%d{yyyyMMddHHmm}_%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>

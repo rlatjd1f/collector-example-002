@@ -18,7 +18,7 @@ public class DataQueueHandler extends SimpleChannelInboundHandler<DataLogRequest
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DataLogRequest msg) throws Exception {
 
-        queueService.pushToKafka(msg);
-//        queueService.pushToRedis(msg);
+//        queueService.pushToKafka(msg);
+        queueService.pushToRedis(msg);
     }
 }

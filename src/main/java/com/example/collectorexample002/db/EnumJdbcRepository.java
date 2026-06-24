@@ -16,7 +16,7 @@ public class EnumJdbcRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<CheckpointEnumCode> findAllEnumDetail() {
+    public List<CheckpointEnumCode> findAllEnumCodes() {
         String sql = "select ed.enum_id, ed.enum_code, ed.enum_value " +
                 "from checkpoint_enum_code ed " +
                 "left join checkpoint_enum_master em " +

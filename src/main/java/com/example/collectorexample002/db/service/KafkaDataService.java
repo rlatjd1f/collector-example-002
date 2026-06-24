@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
@@ -24,7 +23,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Properties;
-import java.util.concurrent.Future;
 
 @Component
 @Slf4j
@@ -38,6 +36,7 @@ public class KafkaDataService {
     private KafkaProducer<String, String> producer;
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
+    // kafka 장애 판단 플래그
     private volatile boolean isKafkaDown = false;
     private long lastFailureTime = 0;
 
@@ -48,19 +47,20 @@ public class KafkaDataService {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
-        // 압축방식 설정
-        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "zstd");
+        // 압축방식 설정, lz4 는 압축률은 낮지만 평균지연시간이 가장 낮고 cpu 사용률이 낮음
+        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
 
         // 전송 설정
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);  // 멱등성 체크
+        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);  // 5건 전송후 ack 수신
         props.put(ProducerConfig.ACKS_CONFIG, "all");               // 전송시 ack 항상 받기
         props.put(ProducerConfig.LINGER_MS_CONFIG, 5);              // 5ms 동안 메시지 모아서 발송
-        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);                 // 전송 타임아웃
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);                 // 전송 타임아웃
         props.put(ProducerConfig.BATCH_SIZE_CONFIG, String.valueOf(32 * 1024));  // 32KB 크기로 배치사이즈 설정
 
         // 재전송 설정
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);    // 재전송 횟수
-        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 5000);     // 재전송 시도 제한 시간
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 2000);     // 재전송 시도 제한 시간
         props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, 100);         // 재전송 시도 간격
         props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 500);             // 브로커 장애로 버퍼 가득찬 경우 대기시간 제한
 
@@ -190,6 +190,11 @@ public class KafkaDataService {
         log.info("[KAFKA_RESTORE] kafka 실패데이터 복구 작업 시작, 파일 수: {}", targetFiles.length);
 
         for (File file : targetFiles) {
+
+            if (!file.canWrite()) {
+                log.warn("[KAFKA_RESTORE] kafka 복구파일 쓰기 권한이 없습니다, {}", file.getName());
+                continue;
+            }
 
             // 생성된지 1분미만의 복구 로그는 건너뛰기
             if (currentTime - file.lastModified() < oneMinuteMills) {

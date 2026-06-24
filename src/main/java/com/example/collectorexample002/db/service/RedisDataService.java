@@ -13,9 +13,7 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Component
 @Slf4j
@@ -32,7 +30,7 @@ public class RedisDataService {
         Thread workerThread = new Thread(() -> {
             while(!Thread.currentThread().isInterrupted()) {
 
-                DataLogRequest request = null;
+                DataLogRequest request;
                 try {
                     request = queueService.takeFromRedis();
 
@@ -50,7 +48,9 @@ public class RedisDataService {
 
                             byte[] keyBytes = stringRedisSerializer.serialize(key);
                             byte[] valuesBytes = stringRedisSerializer.serialize(value);
-                            connection.stringCommands().set(keyBytes, valuesBytes);
+//                            connection.stringCommands().set(keyBytes, valuesBytes);
+
+                            log.info("[REDIS_PIPELINE] pipeline execute result: {}", connection.stringCommands().set(keyBytes, valuesBytes));
                         });
                         return null;
                     });

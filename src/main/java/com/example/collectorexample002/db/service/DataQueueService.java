@@ -11,9 +11,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 @Slf4j
 public class DataQueueService {
 
-    // Redis 실패시 큐의 맨 앞으로 데이터를 다시 넣기 위해 Deque 사용
-    private final LinkedBlockingDeque<DataLogRequest> redisQueue = new LinkedBlockingDeque<>(10000);
-    // Kafka 설정으로 재시도 옵션 처리를 넣어서 Deque 대신 Queue 사용
+    private final LinkedBlockingQueue<DataLogRequest> redisQueue = new LinkedBlockingQueue<>(10000);
     private final LinkedBlockingQueue<DataLogRequest> kafkaQueue = new LinkedBlockingQueue<>(10000);
 
     public void pushToRedis(DataLogRequest dataLogRequest) {
@@ -25,20 +23,6 @@ public class DataQueueService {
     public void pushToKafka(DataLogRequest dataLogRequest) {
         if (!kafkaQueue.offer(dataLogRequest)) {
             log.error("Kafka 큐 버퍼 overflow Error");
-        }
-    }
-
-    /**
-     * Redis 작업 실패시 큐의 맨앞으로 넣기위한 작업
-     * @param dataLogRequest
-     */
-    public void pushToFrontRedis(DataLogRequest dataLogRequest) {
-        try{
-            redisQueue.putFirst(dataLogRequest);
-            log.info("[REDIS_QUEUE] redis 큐 데이터 처리중 문제 발생으로 데이터의 putFirst 실행, queue cnt: {}", redisQueue.size());
-        } catch (InterruptedException e) {
-            log.error("[REDIS_QUEUE] redis 큐 putFirst 처리 도중 오류 발생", e);
-            Thread.currentThread().interrupt();
         }
     }
 

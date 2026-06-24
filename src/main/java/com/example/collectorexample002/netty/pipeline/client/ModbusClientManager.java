@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class NettyModbusClientManager {
+public class ModbusClientManager {
 
     private final DeviceJdbcRepository deviceJdbcRepository;
     private final EnumJdbcRepository enumJdbcRepository;
@@ -72,7 +72,7 @@ public class NettyModbusClientManager {
         }
 
         // 체크포인트 enum 타입과 매핑할 enum 테이블 조회
-        Map<Long, Map<Integer, String>> enumMap = enumJdbcRepository.findAllEnumDetail()
+        Map<Long, Map<Integer, String>> enumCodeMap = enumJdbcRepository.findAllEnumCodes()
                 .stream()
                 .collect(Collectors.groupingBy(CheckpointEnumCode::enumId,
                         Collectors.toMap(CheckpointEnumCode::enumCode, CheckpointEnumCode::enumValue)));
@@ -83,7 +83,7 @@ public class NettyModbusClientManager {
         modbusBootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
                 log.info("디바이스 연결 성공 -> {}", deviceInterface.deviceName());
-                polling(future.channel(), deviceInterface, readBlocks, enumMap);
+                polling(future.channel(), deviceInterface, readBlocks, enumCodeMap);
             } else {
                 log.error("디바이스 연결 timeout 실패 -> {}, 10초후  재연결 시도", deviceInterface.deviceName());
                 hashedWheelTimer.newTimeout(timeout -> connect(deviceInterface), connection_timeout, TimeUnit.SECONDS);

@@ -2,7 +2,8 @@ package com.example.collectorexample002.collector;
 
 import com.example.collectorexample002.db.DeviceJdbcRepository;
 import com.example.collectorexample002.db.record.DeviceInterface;
-import com.example.collectorexample002.netty.pipeline.client.NettyModbusClientManager;
+import com.example.collectorexample002.netty.pipeline.client.ModbusClientManager;
+import com.example.collectorexample002.protocol.Protocols;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -16,7 +17,7 @@ import java.util.Locale;
 public class CollectorManager implements ApplicationRunner {
 
     private final DeviceJdbcRepository deviceJdbcRepository;
-    private final NettyModbusClientManager nettyModbusClientManager;
+    private final ModbusClientManager modbusClientManager;
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
@@ -27,8 +28,8 @@ public class CollectorManager implements ApplicationRunner {
             String protocolName = device.protocolName().toUpperCase(Locale.ROOT);
 
             // 멀티 프로토콜 분기 처리
-            if (protocolName.equals("MODBUS")) {
-                nettyModbusClientManager.connect(device);
+            if (protocolName.equals(Protocols.MODBUS.name())) {
+                modbusClientManager.connect(device);
             }
         });
     }

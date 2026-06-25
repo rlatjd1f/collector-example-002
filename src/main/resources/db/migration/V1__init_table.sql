@@ -19,7 +19,7 @@ create table device_interface (
     interface_host  varchar(15) not null,
     interface_port  smallint unsigned not null,
     primary key (interface_id),
-    constraint fk_device_interface foreign key (device_id) references deviceInterface (device_id),
+    constraint fk_device_interface foreign key (device_id) references device (device_id),
     constraint fk_protocol_interface foreign key (protocol_id) references protocol (protocol_id)
 );
 
@@ -39,7 +39,7 @@ create table checkpoint_enum_code (
 
 -- modbus 전용 체크포인트 테이블
 create table checkpoint_modbus (
-    device_id           bigint,
+    interface_id        bigint,
     checkpoint_id         bigint auto_increment not null,
     checkpoint_address    int unsigned not null,
     checkpoint_count      int unsigned not null,
@@ -50,6 +50,8 @@ create table checkpoint_modbus (
     enum_id             bigint,
     description         varchar(200),
     primary key (checkpoint_id),
-    constraint fk_checkpoint_device foreign key (device_id) references deviceInterface(device_id),
-    constraint fk_checkpoint_enum foreign key (enum_id) references checkpoint_enum_master(enum_id)
+    constraint fk_checkpoint_interface foreign key (interface_id) references device_interface(interface_id),
+    constraint fk_checkpoint_enum foreign key (enum_id) references checkpoint_enum_master(enum_id),
+    -- interface_id 에 checkpoint_address 는 중복이 없어야함
+    constraint uq_interface_address unique (interface_id, checkpoint_address)
 );

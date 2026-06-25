@@ -1,4 +1,4 @@
-package com.example.collectorexample002.db;
+package com.example.collectorexample002.db.repository;
 
 import com.example.collectorexample002.db.mapper.EnumDetailRowMapper;
 import com.example.collectorexample002.db.record.CheckpointEnumCode;

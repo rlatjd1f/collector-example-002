@@ -1,7 +1,7 @@
 package com.example.collectorexample002.db.service;
 
 import com.example.collectorexample002.request.record.CheckpointData;
-import com.example.collectorexample002.request.record.DataLogRequest;
+import com.example.collectorexample002.request.record.CheckpointQueueData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -13,6 +13,8 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Component
@@ -20,42 +22,41 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RedisDataService {
 
-    private final DataQueueService queueService;
+    private final QueueManagerService queueManagerService;
 
     private final static String REDIS_KEY_FORMAT = "CHECK_POINT_%s";
     private final RedisTemplate<String, Object> redisTemplate;
+    private final RedisSerializer<String> stringRedisSerializer = StringRedisSerializer.UTF_8;
 
     @EventListener(ApplicationReadyEvent.class)
     public void eventListener() {
         Thread workerThread = new Thread(() -> {
             while(!Thread.currentThread().isInterrupted()) {
 
-                DataLogRequest request;
+                CheckpointQueueData queueData;
                 try {
-                    request = queueService.takeFromRedis();
+                    queueData = queueManagerService.redisQueuePolling();
 
-                    List<CheckpointData> dataList = request.checkpointDataList();
+                    List<CheckpointData> dataList = queueData.checkpointDataList();
                     if (dataList == null || dataList.isEmpty()) {
                         continue;
                     }
 
-                    RedisSerializer<String> stringRedisSerializer = StringRedisSerializer.UTF_8;
-
                     redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
                         dataList.forEach(data -> {
                             String key = String.format(REDIS_KEY_FORMAT,data.checkpointId());
-                            String value = String.valueOf(data.parsedValue());
+                            String value = String.format("%s,%s", data.parsedValue(), LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
                             byte[] keyBytes = stringRedisSerializer.serialize(key);
                             byte[] valuesBytes = stringRedisSerializer.serialize(value);
-//                            connection.stringCommands().set(keyBytes, valuesBytes);
+                            connection.stringCommands().set(keyBytes, valuesBytes);
 
-                            log.info("[REDIS_PIPELINE] pipeline execute result: {}", connection.stringCommands().set(keyBytes, valuesBytes));
+//                            log.info("[REDIS_PIPELINE] pipeline execute result: {}", connection.stringCommands().set(keyBytes, valuesBytes));
                         });
                         return null;
                     });
 
-                    log.info("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueService.getRedisQueueSize());
+                    log.info("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueManagerService.getRedisQueueSize());
 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

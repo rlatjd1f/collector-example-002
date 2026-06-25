@@ -15,13 +15,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      client-type: jedis
-      jedis:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
-          max-wait: 2000ms
+
   kafka:
     bootstrap-servers: localhost:9092, localhost:9093, localhost:9094
 

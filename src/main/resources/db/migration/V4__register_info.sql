@@ -1,4 +1,4 @@
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 30, 20, 'UTF8', NULL, 'X', 'string', NULL, 'Meter Name'),
    (1, 50, 20, 'UTF8', NULL, 'X', 'string', NULL, 'Meter Model'),
    (1, 1717, 6, 'UTF8', NULL, 'X', 'numeric', NULL, 'Current Version'),
@@ -500,7 +500,7 @@ INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, 
    (1, 23082, 2, 'FLOAT32', 'V', 'X', 'numeric', NULL, 'Voltage A-N, H35 Magnitude, V'),
    (1, 23084, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Voltage A-N, H35 Angle');
 
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 23088, 2, 'FLOAT32', 'V', 'X', 'numeric', NULL, 'Voltage A-N, H36 Magnitude, V'),
    (1, 23090, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Voltage A-N, H36 Angle'),
    (1, 23094, 2, 'FLOAT32', 'V', 'X', 'numeric', NULL, 'Voltage A-N, H37 Magnitude, V'),
@@ -1002,7 +1002,7 @@ INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, 
    (1, 25010, 2, 'FLOAT32', 'A', 'X', 'numeric', NULL, 'Current B, H33 Magnitude, A'),
    (1, 25012, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Current B, H33 Angle');
 
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 25016, 2, 'FLOAT32', 'A', 'X', 'numeric', NULL, 'Current B, H34 Magnitude, A'),
    (1, 25018, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Current B, H34 Angle'),
    (1, 25022, 2, 'FLOAT32', 'A', 'X', 'numeric', NULL, 'Current B, H35 Magnitude, A'),
@@ -1504,7 +1504,7 @@ INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, 
    (1, 30022, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'Block Demand Reactive Power Del Pred Resp'),
    (1, 30023, 1, 'INT16U', NULL, 'X', 'enum', 1, 'Block Demand Reactive Power Del Update Rate');
 
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 30024, 2, 'FLOAT32', 'VAR', 'X', 'numeric', NULL, 'Reactive Power Del Last Demand'),
    (1, 30026, 2, 'FLOAT32', 'VAR', 'X', 'numeric', NULL, 'Reactive Power Del Predicted Demand'),
    (1, 30028, 6, 'TIMESTAMPED_FLOAT32', 'VAR', 'X', 'numeric', NULL, 'Reactive Power Del Peak Demand'),
@@ -2006,7 +2006,7 @@ INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, 
    (1, 36139, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Voltage A-N, H42 Angle'),
    (1, 36143, 2, 'FLOAT32', 'V', 'X', 'numeric', NULL, 'Voltage A-N, H43 Magnitude, V');
 
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 36145, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Voltage A-N, H43 Angle'),
    (1, 36149, 2, 'FLOAT32', 'V', 'X', 'numeric', NULL, 'Voltage A-N, H44 Magnitude, V'),
    (1, 36151, 2, 'FLOAT32', 'degrees', 'X', 'numeric', NULL, 'Voltage A-N, H44 Angle'),
@@ -2508,7 +2508,7 @@ INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, 
    (1, 40350, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'V2-Intrpt N3'),
    (1, 40351, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'V3-Intrpt N1');
 
-INSERT INTO checkpoint_modbus (device_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
+INSERT INTO checkpoint_modbus (interface_id, checkpoint_address, checkpoint_count, data_type, data_unit, calculate, value_type, enum_id, description) VALUES
    (1, 40352, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'V3-Intrpt N2'),
    (1, 40353, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'V3-Intrpt N3'),
    (1, 40500, 1, 'INT16U', NULL, 'X', 'numeric', NULL, 'Freq Num Intervals Valid'),

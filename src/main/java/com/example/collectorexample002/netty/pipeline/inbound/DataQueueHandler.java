@@ -1,7 +1,7 @@
 package com.example.collectorexample002.netty.pipeline.inbound;
 
-import com.example.collectorexample002.db.service.DataQueueService;
-import com.example.collectorexample002.request.record.DataLogRequest;
+import com.example.collectorexample002.db.service.QueueManagerService;
+import com.example.collectorexample002.request.record.CheckpointQueueData;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -11,12 +11,12 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @ChannelHandler.Sharable
-public class DataQueueHandler extends SimpleChannelInboundHandler<DataLogRequest> {
+public class DataQueueHandler extends SimpleChannelInboundHandler<CheckpointQueueData> {
 
-    private final DataQueueService queueService;
+    private final QueueManagerService queueService;
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, DataLogRequest msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, CheckpointQueueData msg) throws Exception {
 
         queueService.pushToKafka(msg);
         queueService.pushToRedis(msg);

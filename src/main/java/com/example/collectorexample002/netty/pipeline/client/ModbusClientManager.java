@@ -1,7 +1,8 @@
 package com.example.collectorexample002.netty.pipeline.client;
 
-import com.example.collectorexample002.db.DeviceJdbcRepository;
-import com.example.collectorexample002.db.EnumJdbcRepository;
+import com.example.collectorexample002.db.repository.DeviceInterfaceRepository;
+import com.example.collectorexample002.db.repository.DeviceJdbcRepository;
+import com.example.collectorexample002.db.repository.EnumJdbcRepository;
 import com.example.collectorexample002.db.record.CheckpointModbus;
 import com.example.collectorexample002.db.record.DeviceInterface;
 import com.example.collectorexample002.request.record.CheckpointRequest;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 public class ModbusClientManager {
 
     private final DeviceJdbcRepository deviceJdbcRepository;
+    private final DeviceInterfaceRepository interfaceRepository;
     private final EnumJdbcRepository enumJdbcRepository;
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
 
@@ -59,15 +61,17 @@ public class ModbusClientManager {
      * 대상 장비에 접속 요청하는 메서드
      */
     public void connect(DeviceInterface deviceInterface) {
+        Long interfaceId = deviceInterface.interfaceId();
+        String deviceName = deviceInterface.deviceName();
         String host = deviceInterface.deviceHost();
         int port = deviceInterface.devicePort();
 
-        log.info("디바이스 연결 시도 [{}]( {}:{} )...", deviceInterface.deviceName(), host, port);
+        log.info("[MODBUS_CLIENT] [{}/{}] 연결 시도 ( {}:{} )...", deviceName, interfaceId, host, port);
 
-        List<CheckpointModbus> checkpoints = deviceJdbcRepository.findCheckpointByDeviceId(deviceInterface.deviceId());
+        List<CheckpointModbus> checkpoints = interfaceRepository.findCheckpointByInterface(interfaceId);
         if (checkpoints.isEmpty()) {
             // 디바이스에 등록된 레지스터 정보가 없으면 폴링할 정보가 없다는뜻
-            log.warn("{} 디바이스에 등록된 레지스터 정보가 없음, 종료", deviceInterface.deviceName());
+            log.warn("[MODBUS_CLIENT] [{}/{}] 장비 / 인터페이스 등록된 체크포인트 정보가 없음, 종료", deviceName, interfaceId);
             return;
         }
 
@@ -82,10 +86,10 @@ public class ModbusClientManager {
 
         modbusBootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
-                log.info("디바이스 연결 성공 -> {}", deviceInterface.deviceName());
+                log.info("[MODBUS_CLIENT] [{}/{}] 연결 성공", deviceName, interfaceId);
                 polling(future.channel(), deviceInterface, readBlocks, enumCodeMap);
             } else {
-                log.error("디바이스 연결 timeout 실패 -> {}, 10초후  재연결 시도", deviceInterface.deviceName());
+                log.error("[MODBUS_CLIENT] [{}/{}] 연결 timeout 실패, 10초후  재연결 시도", deviceName, interfaceId);
                 hashedWheelTimer.newTimeout(timeout -> connect(deviceInterface), connection_timeout, TimeUnit.SECONDS);
             }
         });
@@ -97,13 +101,16 @@ public class ModbusClientManager {
     public void polling(Channel channel, DeviceInterface deviceInterface, Map<Integer, List<CheckpointModbus>> readBlocks, Map<Long, Map<Integer, String>> enumMap) {
 
         // tcp 연결 체크
+        String deviceName = deviceInterface.deviceName();
+        Long interfacedId = deviceInterface.interfaceId();
+
         if(!channel.isActive()) {
-            log.warn("디바이스 [{}] 채널 비활성화로 채널 종료, {} 초 후에 재연결 시도", deviceInterface.deviceName(), connection_timeout);
+            log.warn("[MODBUS_CLIENT] [{}/{}] 채널 비활성화로 채널 종료, {} 초 후에 재연결 시도", deviceName, interfacedId, connection_timeout);
             hashedWheelTimer.newTimeout(timeout -> connect(deviceInterface), connection_timeout, TimeUnit.SECONDS);
             return;
         }
 
-        log.info("디바이스 [{}] 폴링 작업 시작", deviceInterface.deviceName());
+        log.info("디바이스 [{}] 폴링 작업 시작", deviceName);
         channel.attr(ChannelAttributes.ENUM_MAP).set(enumMap);
 
         // 비동기 작업 응답 수신을 위한 future 리스트
@@ -111,16 +118,16 @@ public class ModbusClientManager {
 
         // 루프 돌면서 전송 메서드의 리턴인 future 객체를 리스트에 저장
         readBlocks.forEach((txId, checkpoints) -> {
-            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface.unitId(), checkpoints, txId, deviceInterface)
+            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface, checkpoints, txId)
                     .thenAccept(payload -> {
                         try {
-                            log.info("[TX: {}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).checkpointAddress(), checkpoints.size());
+                            log.info("[MODBUS_CLIENT] [TX: {}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).checkpointAddress(), checkpoints.size());
                         } finally {
                             payload.release();
                         }
                     })
                     .exceptionally(ex -> {
-                        log.error("[{}] 체크포인트 = {} 수집 실패, {}", txId, checkpoints.get(0).checkpointAddress(), ex.getMessage());
+                        log.error("[MODBUS_CLIENT] [{}] 체크포인트 = {} 수집 실패, {}", txId, checkpoints.get(0).checkpointAddress(), ex.getMessage());
                         return null;
                     });
 
@@ -133,13 +140,13 @@ public class ModbusClientManager {
         // 모든 비동기 작업 응답 완료시 수행
         allTasksFuture.whenComplete(((unused, throwable) -> {
             if (throwable != null) {
-                log.error("전체 modbus 수집중 에러 발생");
+                log.error("[MODBUS_CLIENT] 전체 modbus 수집중 에러 발생");
             } else {
-                log.info("전체 modbus 수집 완료");
+                log.info("[MODBUS_CLIENT] 전체 modbus 수집 완료");
             }
 
             // polling 작업 재호출을 위한 타이머 등록
-            log.info("디바이스 [{}] {} 초 후에 폴링 작업 실행", deviceInterface.deviceName(), polling_cycle);
+            log.info("[MODBUS_CLIENT] [{}/{}] {} 초 후에 폴링 작업 실행", deviceName, interfacedId, polling_cycle);
             hashedWheelTimer.newTimeout(timeout -> polling(channel, deviceInterface, readBlocks, enumMap), polling_cycle, TimeUnit.SECONDS);
         }));
     }
@@ -147,7 +154,7 @@ public class ModbusClientManager {
     /**
      * modbus tcp 요청 전송 메서드
      */
-    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, int unitId, List<CheckpointModbus> checkpoints, Integer txId, DeviceInterface deviceInterface) {
+    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, DeviceInterface deviceInterface, List<CheckpointModbus> checkpoints, Integer txId) {
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
 
         // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 checkpoint 정보 전달
@@ -164,7 +171,7 @@ public class ModbusClientManager {
         requestBuffer.writeShort(txId);
         requestBuffer.writeShort(0);    // protocol id
         requestBuffer.writeShort(6);    // length
-        requestBuffer.writeByte(unitId);     // unit id
+        requestBuffer.writeByte(deviceInterface.unitId());     // unit id
 
         // PDU 5 Bytes
         requestBuffer.writeByte(3); // function code 0x03
@@ -254,12 +261,12 @@ public class ModbusClientManager {
     public void shutdown() {
 
         if(hashedWheelTimer != null) {
-            log.info("HashedWheelTimer 종료 처리");
+            log.info("[MODBUS_CLIENT] HashedWheelTimer 종료 처리");
             hashedWheelTimer.stop();
         }
 
         if (group != null) {
-            log.info("Netty EventLoopGroup 종료 처리");
+            log.info("[MODBUS_CLIENT] Netty EventLoopGroup 종료 처리");
             group.shutdownGracefully();
         }
     }

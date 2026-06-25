@@ -1,6 +1,6 @@
 package com.example.collectorexample002.db.service;
 
-import com.example.collectorexample002.request.record.DataLogRequest;
+import com.example.collectorexample002.request.record.CheckpointQueueData;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -31,12 +31,16 @@ public class KafkaDataService {
 
     private final static Logger failLogger = LoggerFactory.getLogger("KAFKA_FAIL_LOGGER");
     private final static String KAFKA_TOPIC = "CHECK_POINT_TOPIC";
+    private final static String FAIL_MESSAGE_PATH = "logs/fail/";
     private final static long KAFKA_SUSPEND_DURATION_MS = 10000;
-    private final DataQueueService queueService;
+
+    private final QueueManagerService queueService;
     private KafkaProducer<String, String> producer;
+
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
-    // kafka 장애 판단 플래그
+
+    // kafka 브로커 장애 판단 플래그
     private volatile boolean isKafkaDown = false;
     private long lastFailureTime = 0;
 
@@ -62,7 +66,7 @@ public class KafkaDataService {
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);    // 재전송 횟수
         props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 2000);     // 재전송 시도 제한 시간
         props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, 100);         // 재전송 시도 간격
-        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 500);             // 브로커 장애로 버퍼 가득찬 경우 대기시간 제한
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 500);             // 브로커 장애시 대기시간
 
         this.producer = new KafkaProducer<>(props);
         log.info("[KAFKA_INIT] Apache Kafka Producer 초기화 완료");
@@ -73,16 +77,16 @@ public class KafkaDataService {
         Thread workerThread = new Thread(() -> {
             while(!Thread.currentThread().isInterrupted()) {
                 try {
-                    DataLogRequest request = queueService.takeFromKafka();
-                    Long deviceId = request.deviceId();
-                    Long interfaceId = request.interfaceId();
+                    CheckpointQueueData queueData = queueService.kafkaQueuePolling();
+                    Long deviceId = queueData.deviceId();
+                    Long interfaceId = queueData.interfaceId();
 
-                    StringBuilder csvBuilder = new StringBuilder();
+                    StringBuilder message = new StringBuilder();
                     String partitionKey = String.format("%s-%s", deviceId, interfaceId);
 
                     // 각 라인에 키 + 메시지 구조
-                    request.checkpointDataList().forEach(checkpointData -> {
-                        csvBuilder.append(partitionKey).append("/")
+                    queueData.checkpointDataList().forEach(checkpointData -> {
+                        message.append(partitionKey).append("/")
                                   .append(checkpointData.checkpointId()).append(",")
                                   .append(checkpointData.checkpointAddress()).append(",")
                                   .append(checkpointData.parsedValue()).append(",")
@@ -91,7 +95,7 @@ public class KafkaDataService {
                     });
 
                     // 파티션키 생성 - 장비id + 인터페이스id 기준으로 동일파티션에 순서보장
-                    sendMessage(KAFKA_TOPIC, partitionKey, csvBuilder.toString());
+                    sendMessage(partitionKey, message.toString());
 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -107,14 +111,14 @@ public class KafkaDataService {
         workerThread.start();
     }
 
-    public void sendMessage(String topic, String key, String message) {
+    public void sendMessage(String partitionKey, String message) {
 
         long currentTime = System.currentTimeMillis();
 
         if (isKafkaDown) {
             // kafka 다운 상태 유지할 KAFKA_SUSPEND_DURATION_MS(10s) 시간동안 fail logger 형태로 저장
             if (currentTime - lastFailureTime < KAFKA_SUSPEND_DURATION_MS) {
-                writeFailedMessageToFile(message);
+                failMessageWrite(message);
                 return;
             }
             // KAFKA_SUSPEND_DURATION_MS 시간 이후에 장애 flag 변경하여 kafka 재전송 시도
@@ -124,27 +128,27 @@ public class KafkaDataService {
             }
         }
         try {
-            ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, message);
+            ProducerRecord<String, String> record = new ProducerRecord<>(KAFKA_TOPIC, partitionKey, message);
             producer.send(record, ((metadata, exception) -> {
                 if (exception != null) {
                     log.error("[KAFKA_SEND] kafka send 실행 오류, 잔여 queue cnt: {}", queueService.getKafkaQueueSize(), exception);
-                    triggerKafkaDown();
-                    writeFailedMessageToFile(message);
+                    kafkaDownTrigger();
+                    failMessageWrite(message);
                 } else {
                     log.info("[KAFKA_SEND] kafka send 성공, 잔여 queue cnt: {},  파티션: {}, 오프셋: {}", queueService.getKafkaQueueSize(), metadata.partition(), metadata.offset());
                 }
             }));
         } catch (Exception e) {
             log.error("[KAFKA_SEND] 프로듀서 버퍼 포화상태, 파일 백업, 잔여 queue cnt: {}", queueService.getKafkaQueueSize());
-            triggerKafkaDown();
-            writeFailedMessageToFile(message);
+            kafkaDownTrigger();
+            failMessageWrite(message);
         }
     }
 
     /**
      * kafka 장애 발생시 재처리를 위한 Flag 값 변경
      */
-    private synchronized void triggerKafkaDown() {
+    private synchronized void kafkaDownTrigger() {
         if(!isKafkaDown) {
             isKafkaDown = true;
             lastFailureTime = System.currentTimeMillis();
@@ -156,7 +160,7 @@ public class KafkaDataService {
      * kafka 장애 발생시 재처리를 위한 fail logger 작성
      * @param message
      */
-    private void writeFailedMessageToFile(String message) {
+    private void failMessageWrite(String message) {
         failLogger.info("{}", message);
         log.info("[KAFKA_SEND] 복구용 file 쓰기 작업 완료, 잔여 queue cnt: {}", queueService.getKafkaQueueSize());
     }
@@ -165,74 +169,75 @@ public class KafkaDataService {
      * 60초 주기로 fail log 로 복구작업을 하기위한 검사
      */
     @Scheduled(fixedDelay = 60000)
-    public void restoreFailData() {
+    public void msgRestoreScheduler() {
 
         // kafka 장애상태일 경우 리턴
         if (isKafkaDown) {
             return;
         }
 
-        File logDir = new File("logs/fail/");
+        File logDir = new File(FAIL_MESSAGE_PATH);
         if (!logDir.exists()) {
             return;
         }
 
-        // kafka_fail_*.log 형태의 로그파일 검색
-        File[] targetFiles = logDir.listFiles((dir, name) -> name.startsWith("kafka_fail_") && name.endsWith(".log"));
+        if (!logDir.canWrite() || !logDir.canExecute()) {
+            log.warn("[KAFKA_RESTORE] 복구 로그 디렉토리[{}] 권한 부족, 실행: {}, 쓰기: {}", logDir.getName(), logDir.canExecute(), logDir.canWrite());
+            return;
+        }
 
-        if (targetFiles == null || targetFiles.length == 0) {
+        // kafka_fail_*.log 패턴 로그파일 검색
+        File[] failLogList = logDir.listFiles((dir, name) -> name.startsWith("kafka_fail_") && name.endsWith(".log"));
+
+        if (failLogList == null || failLogList.length == 0) {
+            log.info("[KAFKA_RESTORE] 복구 대상 파일이 없음");
             return;
         }
 
         long currentTime = System.currentTimeMillis();
         long oneMinuteMills = 60 * 1000;
 
-        log.info("[KAFKA_RESTORE] kafka 실패데이터 복구 작업 시작, 파일 수: {}", targetFiles.length);
+        for (File failLog : failLogList) {
 
-        for (File file : targetFiles) {
-
-            if (!file.canWrite()) {
-                log.warn("[KAFKA_RESTORE] kafka 복구파일 쓰기 권한이 없습니다, {}", file.getName());
+            // 생성된지 1분미만의 복구 로그는 작성되고 있으므로 건너뛰기
+            if (currentTime - failLog.lastModified() < oneMinuteMills) {
                 continue;
             }
 
-            // 생성된지 1분미만의 복구 로그는 건너뛰기
-            if (currentTime - file.lastModified() < oneMinuteMills) {
-                continue;
-            }
-
-            boolean isSuccess = processRestore(file);
+            log.info("[KAFKA_RESTORE] fail log 복구 작업 시작, 파일: {}", failLog.getName());
+            boolean isSuccess = msgRestoreProcess(failLog);
 
             if (isSuccess) {
-                if (file.delete()) {
-                    log.info("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 성공 {}", file.getName());
+                if (failLog.delete()) {
+                    log.info("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 성공 {}", failLog.getName());
                 } else {
-                    log.warn("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 실패");
+                    log.warn("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 실패 {}", failLog.getName());
+                    failLog.renameTo(new File(String.format("%s%s.remove", FAIL_MESSAGE_PATH, failLog.getName())));
                 }
             }
         }
     }
 
-    private boolean processRestore(File file) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
-            while((line = reader.readLine()) != null) {
+    private boolean msgRestoreProcess(File failLog) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(failLog))) {
+            String message;
+            while((message = reader.readLine()) != null) {
 
-                if(line.trim().isEmpty()) {
+                if(message.trim().isEmpty()) {
                     continue;
                 }
 
-                int delimiterIdx = line.indexOf("/");
+                int delimiterIdx = message.indexOf("/");
                 if (delimiterIdx == - 1) {
                     continue;
                 }
 
                 if(isKafkaDown) {
-                    throw new KafkaException("kafka 장애 발생");
+                    throw new KafkaException("kafka 브로커 장애 발생");
                 }
 
-                String key = line.substring(0, delimiterIdx);
-                sendMessage(KAFKA_TOPIC, key, line);
+                String partitionKey = message.substring(0, delimiterIdx);
+                sendMessage(partitionKey, message);
             }
 
             // 잔여 버퍼를 처리하기 위한 flush 호출
@@ -243,7 +248,7 @@ public class KafkaDataService {
             log.error("[KAFKA_RESTORE] 파일 읽기중 오류 발생", e);
             return false;
         } catch (KafkaException e) {
-            log.error("[KAFKA_RESTORE] kafka 장애 발생");
+            log.error("[KAFKA_RESTORE] kafka 브로커 장애 발생", e);
             return false;
         } catch (Exception e) {
             log.error("[KAFKA_RESTORE] 복구 작업중 에러 발생", e);

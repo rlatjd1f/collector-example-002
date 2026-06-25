@@ -1,6 +1,6 @@
 package com.example.collectorexample002.collector;
 
-import com.example.collectorexample002.db.DeviceJdbcRepository;
+import com.example.collectorexample002.db.repository.DeviceJdbcRepository;
 import com.example.collectorexample002.db.record.DeviceInterface;
 import com.example.collectorexample002.netty.pipeline.client.ModbusClientManager;
 import com.example.collectorexample002.protocol.Protocols;

@@ -13,7 +13,7 @@ public class DeviceInterfaceRowMapper implements RowMapper<DeviceInterface> {
         return new DeviceInterface(
                 rs.getLong("device_id"),
                 rs.getLong("protocol_id"),
-                rs.getLong("interface_id"),
+                rs.getLong("interfaceId"),
                 rs.getString("protocol_name"),
                 rs.getInt("unit_id"),
                 rs.getString("device_name"),

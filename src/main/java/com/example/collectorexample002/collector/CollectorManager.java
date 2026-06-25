@@ -23,13 +23,13 @@ public class CollectorManager implements ApplicationRunner {
     public void run(ApplicationArguments args) throws Exception {
 
         // 장비목록 전체 조회후 netty 비동기 연결 호출
-        List<DeviceInterface> deviceInterfaces = deviceJdbcRepository.findAllDevice();
-        deviceInterfaces.forEach(device -> {
-            String protocolName = device.protocolName().toUpperCase(Locale.ROOT);
+        List<DeviceInterface> deviceInterfaceList = deviceJdbcRepository.findAllDevice();
+        deviceInterfaceList.forEach(deviceInterface -> {
+            String protocolName = deviceInterface.protocolName().toUpperCase(Locale.ROOT);
 
             // 멀티 프로토콜 분기 처리
             if (protocolName.equals(Protocols.MODBUS.name())) {
-                modbusClientManager.connect(device);
+                modbusClientManager.connect(deviceInterface);
             }
         });
     }

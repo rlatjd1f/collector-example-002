@@ -38,7 +38,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
 
         int txId = payload.readUnsignedShort();
-        payload.readUnsignedShort();    // interface_id
+        payload.readUnsignedShort();    // interfaceId
         int length = payload.readUnsignedShort();
         payload.readUnsignedByte();     // unitId
         log.debug("[MODBUS_DECODE] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
@@ -96,7 +96,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
             if (responseFuture != null && !responseFuture.isDone()) {
                 Long deviceId = pendingRequest.deviceInterface().deviceId();
-                Long interfaceId = pendingRequest.deviceInterface().interface_id();
+                Long interfaceId = pendingRequest.deviceInterface().interfaceId();
                 CheckpointQueueData checkpointQueueData = new CheckpointQueueData(deviceId, interfaceId, checkpointDataList);
 
                 // 파싱 완료후 비동기 완료처리
@@ -181,16 +181,11 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                         Map<Integer, String> enumCodeMap = enumMasterMap.get(checkpoint.enumId());
                         parsedEnumValue = Optional.ofNullable(enumCodeMap.get(numValue.intValue()));
 
-                        if (parsedEnumValue.isPresent()) {
-//                            log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {}", checkpoint.interface_id(), checkpoint.description(), parsedEnumValue);
-                        } else {
-                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum interface_id: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
+                        if (parsedEnumValue.isEmpty()) {
+                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum interfaceId: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
                             continue;
                         }
                     }
-                } else {
-//                    log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {} {}",
-//                            checkpoint.interface_id(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
                 }
             } else {
                 log.warn("[MODBUS_DECODE] checkpoint_id: {}, desc: {}", checkpoint.checkpointId(), checkpoint.description());

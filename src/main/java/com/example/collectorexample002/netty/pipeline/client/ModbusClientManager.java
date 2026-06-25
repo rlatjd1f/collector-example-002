@@ -12,6 +12,7 @@ import com.example.collectorexample002.netty.config.ChannelAttributes;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.Timer;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +62,7 @@ public class ModbusClientManager {
      * 대상 장비에 접속 요청하는 메서드
      */
     public void connect(DeviceInterface deviceInterface) {
-        Long interfaceId = deviceInterface.interface_id();
+        Long interfaceId = deviceInterface.interfaceId();
         String deviceName = deviceInterface.deviceName();
         String host = deviceInterface.deviceHost();
         int port = deviceInterface.devicePort();
@@ -75,14 +76,14 @@ public class ModbusClientManager {
             return;
         }
 
+        // 연속된 주소로 요청가능한 레지스터들을 블록단위로 생성
+        Map<Integer, List<Checkpoint>> readBlocks = makeReadBlocks(checkpoints);
+
         // 체크포인트 enum 타입과 매핑할 enum 테이블 조회
         Map<Long, Map<Integer, String>> enumCodeMap = enumJdbcRepository.findAllEnumCodes()
                 .stream()
                 .collect(Collectors.groupingBy(CheckpointEnumCode::enumId,
                         Collectors.toMap(CheckpointEnumCode::enumCode, CheckpointEnumCode::enumValue)));
-
-        // 연속된 주소로 요청가능한 레지스터들을 블록단위로 생성
-        Map<Integer, List<Checkpoint>> readBlocks = makeReadBlocks(checkpoints);
 
         modbusBootstrap.connect(host, port).addListener((ChannelFuture future) -> {
             if (future.isSuccess()) {
@@ -102,7 +103,7 @@ public class ModbusClientManager {
 
         // tcp 연결 체크
         String deviceName = deviceInterface.deviceName();
-        Long interfacedId = deviceInterface.interface_id();
+        Long interfacedId = deviceInterface.interfaceId();
 
         if(!channel.isActive()) {
             log.warn("[MODBUS_CLIENT] [{}/{}] 채널 비활성화로 채널 종료, {} 초 후에 재연결 시도", deviceName, interfacedId, connection_timeout);
@@ -119,15 +120,10 @@ public class ModbusClientManager {
         // 루프 돌면서 전송 메서드의 리턴인 future 객체를 리스트에 저장
         readBlocks.forEach((txId, checkpoints) -> {
             CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface, checkpoints, txId)
-                    .thenAccept(payload -> {
-                        try {
-                            log.debug("[MODBUS_CLIENT] [TX: {}][수신 완료] 체크포인트 = {}, count = {}", txId, checkpoints.get(0).requestAddress(), checkpoints.size());
-                        } finally {
-                            payload.release();
-                        }
-                    })
+                    .thenAccept(ReferenceCounted::release)
                     .exceptionally(ex -> {
-                        log.error("[MODBUS_CLIENT] [{}] 체크포인트 = {} 수집 실패, {}", txId, checkpoints.get(0).requestAddress(), ex.getMessage());
+                        log.error("[MODBUS_CLIENT] [{}] 체크포인트 = {} 수집 실패, {}",
+                                txId, checkpoints.get(0).requestAddress(), ex.getMessage());
                         return null;
                     });
 
@@ -145,7 +141,8 @@ public class ModbusClientManager {
 
             // polling 작업 재호출을 위한 타이머 등록
             log.info("[MODBUS_CLIENT] [{}/{}] {} 초 후에 폴링 작업 실행", deviceName, interfacedId, polling_cycle);
-            hashedWheelTimer.newTimeout(timeout -> polling(channel, deviceInterface, readBlocks, enumMap), polling_cycle, TimeUnit.SECONDS);
+            hashedWheelTimer.newTimeout(timeout ->
+                    polling(channel, deviceInterface, readBlocks, enumMap), polling_cycle, TimeUnit.SECONDS);
         }));
     }
 
@@ -158,23 +155,23 @@ public class ModbusClientManager {
         // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 checkpoint 정보 전달
         CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, checkpoints, deviceInterface));
         // 연속된 레지스터들의 시작 주소
-        int checkpointAddress = checkpoints.get(0).requestAddress();
+        int requestAddress = checkpoints.get(0).requestAddress();
         // 연속된 레지스터들의 카운트 합
-        int checkpointCount = checkpoints.stream().mapToInt(Checkpoint::requestCount).sum();
+        int requestCountSum = checkpoints.stream().mapToInt(Checkpoint::requestCount).sum();
 
         // Modbus TCP MBAP Header + PDU
         ByteBuf requestBuffer = channel.alloc().buffer(12);
 
         // HEADER 7 Bytes
         requestBuffer.writeShort(txId);
-        requestBuffer.writeShort(0);    // protocol interface_id
+        requestBuffer.writeShort(0);    // protocol interfaceId
         requestBuffer.writeShort(6);    // length
-        requestBuffer.writeByte(deviceInterface.unitId());     // unit interface_id
+        requestBuffer.writeByte(deviceInterface.unitId());     // unit interfaceId
 
         // PDU 5 Bytes
         requestBuffer.writeByte(3); // function code 0x03
-        requestBuffer.writeShort(checkpointAddress);
-        requestBuffer.writeShort(checkpointCount);
+        requestBuffer.writeShort(requestAddress);
+        requestBuffer.writeShort(requestCountSum);
 
         channel.writeAndFlush(requestBuffer).addListener(writeFuture -> {
             if(!writeFuture.isSuccess()) {

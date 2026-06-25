@@ -17,7 +17,6 @@ public class DataQueueHandler extends SimpleChannelInboundHandler<CheckpointQueu
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, CheckpointQueueData msg) throws Exception {
-
         queueService.pushToKafka(msg);
         queueService.pushToRedis(msg);
     }

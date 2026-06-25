@@ -56,7 +56,7 @@ public class KafkaDataService {
 
         // 전송 설정
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);  // 멱등성 체크
-        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);  // 5건 전송후 ack 수신
+        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);  // ack 없이 한번에 연속 전송 가능한 최대 수
         props.put(ProducerConfig.ACKS_CONFIG, "all");               // 전송시 ack 항상 받기
         props.put(ProducerConfig.LINGER_MS_CONFIG, 5);              // 5ms 동안 메시지 모아서 발송
         props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 1000);                 // 전송 타임아웃
@@ -134,8 +134,6 @@ public class KafkaDataService {
                     log.error("[KAFKA_SEND] kafka send 실행 오류, 잔여 queue cnt: {}", queueService.getKafkaQueueSize(), exception);
                     kafkaDownTrigger();
                     failMessageWrite(message);
-                } else {
-                    log.debug("[KAFKA_SEND] kafka send 성공, 잔여 queue cnt: {},  파티션: {}, 오프셋: {}", queueService.getKafkaQueueSize(), metadata.partition(), metadata.offset());
                 }
             }));
         } catch (Exception e) {

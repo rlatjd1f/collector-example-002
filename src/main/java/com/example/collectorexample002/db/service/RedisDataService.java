@@ -36,7 +36,6 @@ public class RedisDataService {
                 CheckpointQueueData queueData;
                 try {
                     queueData = queueManagerService.redisQueuePolling();
-
                     List<CheckpointData> dataList = queueData.checkpointDataList();
                     if (dataList == null || dataList.isEmpty()) {
                         continue;
@@ -45,13 +44,12 @@ public class RedisDataService {
                     redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
                         dataList.forEach(data -> {
                             String key = String.format(REDIS_KEY_FORMAT,data.checkpointId());
-                            String value = String.format("%s,%s", data.parsedValue(), LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                            String collectedTime = data.collectedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                            String value = String.format("%s,%s", data.parsedValue(), collectedTime);
 
                             byte[] keyBytes = stringRedisSerializer.serialize(key);
                             byte[] valuesBytes = stringRedisSerializer.serialize(value);
                             connection.stringCommands().set(keyBytes, valuesBytes);
-
-//                            log.info("[REDIS_PIPELINE] pipeline execute result: {}", connection.stringCommands().set(keyBytes, valuesBytes));
                         });
                         return null;
                     });

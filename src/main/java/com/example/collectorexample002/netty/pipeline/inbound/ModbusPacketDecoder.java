@@ -1,6 +1,6 @@
 package com.example.collectorexample002.netty.pipeline.inbound;
 
-import com.example.collectorexample002.db.record.CheckpointModbus;
+import com.example.collectorexample002.db.record.Checkpoint;
 import com.example.collectorexample002.request.CheckpointRequestManager;
 import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.netty.config.ChannelAttributes;
@@ -38,10 +38,10 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
 
         int txId = payload.readUnsignedShort();
-        payload.readUnsignedShort();    // interfaceId
+        payload.readUnsignedShort();    // id
         int length = payload.readUnsignedShort();
         payload.readUnsignedByte();     // unitId
-        log.info("[MODBUS_DECODE] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
+        log.debug("[MODBUS_DECODE] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
 
         try {
 
@@ -83,7 +83,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             Map<Long, Map<Integer, String>> enumMasterMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
             // 요청시 사용했던 레지스터 리스트 정보
-            List<CheckpointModbus> checkpoints = pendingRequest.registers();
+            List<Checkpoint> checkpoints = pendingRequest.registers();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
             List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMasterMap);
@@ -96,7 +96,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
             if (responseFuture != null && !responseFuture.isDone()) {
                 Long deviceId = pendingRequest.deviceInterface().deviceId();
-                Long interfaceId = pendingRequest.deviceInterface().interfaceId();
+                Long interfaceId = pendingRequest.deviceInterface().id();
                 CheckpointQueueData checkpointQueueData = new CheckpointQueueData(deviceId, interfaceId, checkpointDataList);
 
                 // 파싱 완료후 비동기 완료처리
@@ -111,16 +111,16 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<CheckpointData> parsePayloads(ByteBuf payload, List<CheckpointModbus> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
+    private List<CheckpointData> parsePayloads(ByteBuf payload, List<Checkpoint> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
 
         List<CheckpointData> checkpointDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
-        for (CheckpointModbus checkpoint : checkpoints) {
+        for (Checkpoint checkpoint : checkpoints) {
 
             // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
-            int requireBytes = checkpoint.checkpointCount() * 2;
+            int requireBytes = checkpoint.requestCount() * 2;
 
             // payload 바이트 크기 유효성 검증
             if (payload.readerIndex() + requireBytes > endReadIndex || payload.readableBytes() < requireBytes) {
@@ -143,7 +143,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                 case "INT64" -> parsedValue = payload.readLong();
                 case "FLOAT32" -> parsedValue = wordSwap(payload);
                 case "BITMAP" -> {
-                    if (checkpoint.checkpointCount() == 1) {
+                    if (checkpoint.requestCount() == 1) {
                         parsedValue = Integer.toBinaryString(payload.readUnsignedShort());
                     } else {
                         parsedValue = Long.toBinaryString(payload.readUnsignedInt());
@@ -182,24 +182,24 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                         parsedEnumValue = Optional.ofNullable(enumCodeMap.get(numValue.intValue()));
 
                         if (parsedEnumValue.isPresent()) {
-                            log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {}", checkpoint.checkpointId(), checkpoint.description(), parsedEnumValue);
+//                            log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {}", checkpoint.id(), checkpoint.description(), parsedEnumValue);
                         } else {
-                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum id: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
+                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum id: {}, value: {}", checkpoint.id(), checkpoint.enumId(), parsedValue);
                             continue;
                         }
                     }
                 } else {
-                    log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {} {}",
-                            checkpoint.checkpointId(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
+//                    log.info("[MODBUS_DECODE] checkpoint_id: {}, desc: {}, value: {} {}",
+//                            checkpoint.id(), checkpoint.description(), parsedValue, Optional.ofNullable(checkpoint.dataUnit()).orElse(""));
                 }
             } else {
-                log.warn("[MODBUS_DECODE] checkpoint_id: {}, desc: {}", checkpoint.checkpointId(), checkpoint.description());
+                log.warn("[MODBUS_DECODE] checkpoint_id: {}, desc: {}", checkpoint.id(), checkpoint.description());
                 continue;
             }
 
             checkpointDataList.add(new CheckpointData(
-            checkpoint.checkpointId(),
-            checkpoint.checkpointAddress(),
+            checkpoint.id(),
+            checkpoint.requestAddress(),
             parsedValue,
             LocalDateTime.now()));
         }

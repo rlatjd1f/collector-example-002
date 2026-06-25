@@ -56,7 +56,7 @@ public class RedisDataService {
                         return null;
                     });
 
-                    log.info("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueManagerService.getRedisQueueSize());
+                    log.debug("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueManagerService.getRedisQueueSize());
 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

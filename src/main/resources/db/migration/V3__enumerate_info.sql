@@ -1,4 +1,4 @@
-INSERT INTO checkpoint_enum_master (enum_id, enum_name) VALUES
+INSERT INTO checkpoint_enum_master (id, name) VALUES
  (1, "Update Rate");
 
 INSERT INTO checkpoint_enum_code(enum_id, enum_code, enum_value) VALUES

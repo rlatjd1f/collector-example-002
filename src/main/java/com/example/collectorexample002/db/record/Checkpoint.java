@@ -1,12 +1,12 @@
 package com.example.collectorexample002.db.record;
 
-public record CheckpointModbus(
-        Long checkpointId,
-        int checkpointAddress,
-        int checkpointCount,
+public record Checkpoint(
+        Long id,
+        int requestAddress,
+        int requestCount,
         String dataType,
         String dataUnit,
-        String calculate,
+        String expression,
         String valueType,
         Long enumId,
         String description

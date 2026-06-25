@@ -3,7 +3,7 @@ package com.example.collectorexample002.db.record;
 public record DeviceInterface(
         Long deviceId,
         Long protocolId,
-        Long interfaceId,
+        Long id,
         String protocolName,
         int unitId,
         String deviceName,

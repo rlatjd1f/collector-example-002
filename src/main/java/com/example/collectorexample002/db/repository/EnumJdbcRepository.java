@@ -1,6 +1,6 @@
 package com.example.collectorexample002.db.repository;
 
-import com.example.collectorexample002.db.mapper.EnumDetailRowMapper;
+import com.example.collectorexample002.db.mapper.CheckpointEnumCodeRowMapper;
 import com.example.collectorexample002.db.record.CheckpointEnumCode;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -20,7 +20,7 @@ public class EnumJdbcRepository {
         String sql = "select ed.enum_id, ed.enum_code, ed.enum_value " +
                 "from checkpoint_enum_code ed " +
                 "left join checkpoint_enum_master em " +
-                "on ed.enum_id = em.enum_id";
-        return jdbcTemplate.query(sql, new EnumDetailRowMapper());
+                "on ed.enum_id = em.id";
+        return jdbcTemplate.query(sql, new CheckpointEnumCodeRowMapper());
     }
 }

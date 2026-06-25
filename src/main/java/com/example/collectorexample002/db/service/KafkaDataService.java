@@ -135,7 +135,7 @@ public class KafkaDataService {
                     kafkaDownTrigger();
                     failMessageWrite(message);
                 } else {
-                    log.info("[KAFKA_SEND] kafka send 성공, 잔여 queue cnt: {},  파티션: {}, 오프셋: {}", queueService.getKafkaQueueSize(), metadata.partition(), metadata.offset());
+                    log.debug("[KAFKA_SEND] kafka send 성공, 잔여 queue cnt: {},  파티션: {}, 오프셋: {}", queueService.getKafkaQueueSize(), metadata.partition(), metadata.offset());
                 }
             }));
         } catch (Exception e) {

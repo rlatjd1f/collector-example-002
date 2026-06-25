@@ -6,7 +6,7 @@ import org.springframework.jdbc.core.RowMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class EnumDetailRowMapper implements RowMapper<CheckpointEnumCode> {
+public class CheckpointEnumCodeRowMapper implements RowMapper<CheckpointEnumCode> {
     @Override
     public CheckpointEnumCode mapRow(ResultSet rs, int rowNum) throws SQLException {
 

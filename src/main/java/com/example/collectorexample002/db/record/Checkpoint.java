@@ -1,7 +1,7 @@
 package com.example.collectorexample002.db.record;
 
 public record Checkpoint(
-        Long id,
+        Long checkpointId,
         int requestAddress,
         int requestCount,
         String dataType,

@@ -61,7 +61,7 @@ public class ModbusClientManager {
      * 대상 장비에 접속 요청하는 메서드
      */
     public void connect(DeviceInterface deviceInterface) {
-        Long interfaceId = deviceInterface.id();
+        Long interfaceId = deviceInterface.interface_id();
         String deviceName = deviceInterface.deviceName();
         String host = deviceInterface.deviceHost();
         int port = deviceInterface.devicePort();
@@ -102,7 +102,7 @@ public class ModbusClientManager {
 
         // tcp 연결 체크
         String deviceName = deviceInterface.deviceName();
-        Long interfacedId = deviceInterface.id();
+        Long interfacedId = deviceInterface.interface_id();
 
         if(!channel.isActive()) {
             log.warn("[MODBUS_CLIENT] [{}/{}] 채널 비활성화로 채널 종료, {} 초 후에 재연결 시도", deviceName, interfacedId, connection_timeout);
@@ -167,9 +167,9 @@ public class ModbusClientManager {
 
         // HEADER 7 Bytes
         requestBuffer.writeShort(txId);
-        requestBuffer.writeShort(0);    // protocol id
+        requestBuffer.writeShort(0);    // protocol interface_id
         requestBuffer.writeShort(6);    // length
-        requestBuffer.writeByte(deviceInterface.unitId());     // unit id
+        requestBuffer.writeByte(deviceInterface.unitId());     // unit interface_id
 
         // PDU 5 Bytes
         requestBuffer.writeByte(3); // function code 0x03

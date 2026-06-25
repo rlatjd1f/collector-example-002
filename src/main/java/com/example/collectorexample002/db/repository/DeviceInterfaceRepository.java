@@ -18,7 +18,7 @@ public class DeviceInterfaceRepository {
     }
 
     public List<Checkpoint> findCheckpointByInterface(Long interfaceId) {
-        String sql = "Select id, request_address, request_count, data_type, data_unit, expression, value_type, enum_id, description \n" +
+        String sql = "Select id as checkpoint_id, request_address, request_count, data_type, data_unit, expression, value_type, enum_id, description \n" +
                 " from checkpoint where interface_id = :interface_id";
 
         MapSqlParameterSource params = new MapSqlParameterSource()

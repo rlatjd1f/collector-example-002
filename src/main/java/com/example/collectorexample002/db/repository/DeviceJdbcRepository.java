@@ -17,10 +17,10 @@ public class DeviceJdbcRepository {
     }
 
     public List<DeviceInterface> findAllDevice() {
-        String sql = "select di.device_id ,di.protocol_id ,di.id ,p.name as protocol_name ,di.unit_id ,d.name as device_name, di.interface_host, di.interface_port " +
+        String sql = "select di.device_id ,di.protocol_id ,di.id as interface_id ,p.name as protocol_name ,di.unit_id ,d.name as device_name, di.interface_host, di.interface_port " +
                 "from device_interface di " +
-                "left join device d on d.id = di.device_id " +
-                "left join protocol p on p.id = di.protocol_id";
+                "join device d on d.id = di.device_id " +
+                "join protocol p on p.id = di.protocol_id";
         return jdbcTemplate.query(sql, new DeviceInterfaceRowMapper());
     }
 }

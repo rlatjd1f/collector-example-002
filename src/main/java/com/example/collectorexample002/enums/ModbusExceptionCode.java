@@ -1,4 +1,4 @@
-package com.example.collectorexample002.protocol.modbus;
+package com.example.collectorexample002.enums;
 
 import lombok.Getter;
 

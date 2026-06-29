@@ -1,7 +1,7 @@
 package com.example.collectorexample002.db.service;
 
-import com.example.collectorexample002.request.record.CheckpointData;
-import com.example.collectorexample002.request.record.CheckpointQueueData;
+import com.example.collectorexample002.netty.request.record.CheckpointData;
+import com.example.collectorexample002.netty.request.record.CheckpointQueueData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -13,7 +13,6 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -22,7 +21,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RedisDataService {
 
-    private final QueueManagerService queueManagerService;
+    private final QueueManageService queueManageService;
 
     private final static String REDIS_KEY_FORMAT = "CHECK_POINT_%s";
     private final RedisTemplate<String, Object> redisTemplate;
@@ -35,7 +34,7 @@ public class RedisDataService {
 
                 CheckpointQueueData queueData;
                 try {
-                    queueData = queueManagerService.redisQueuePolling();
+                    queueData = queueManageService.redisQueuePolling();
                     List<CheckpointData> dataList = queueData.checkpointDataList();
                     if (dataList == null || dataList.isEmpty()) {
                         continue;
@@ -54,7 +53,7 @@ public class RedisDataService {
                         return null;
                     });
 
-                    log.debug("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueManagerService.getRedisQueueSize());
+                    log.debug("[REDIS_SEND] Redis send 완료, 잔여 queue cnt: {}", queueManageService.getRedisQueueSize());
 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

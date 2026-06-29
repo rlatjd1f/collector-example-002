@@ -1,4 +1,4 @@
-package com.example.collectorexample002.netty.config;
+package com.example.collectorexample002.config;
 
 import com.example.collectorexample002.db.service.QueueManageService;
 import com.example.collectorexample002.netty.pipeline.inbound.DataQueueHandler;

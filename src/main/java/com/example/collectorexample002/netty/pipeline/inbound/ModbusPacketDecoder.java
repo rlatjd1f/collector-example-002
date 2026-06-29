@@ -1,12 +1,12 @@
 package com.example.collectorexample002.netty.pipeline.inbound;
 
 import com.example.collectorexample002.db.record.Checkpoint;
-import com.example.collectorexample002.request.CheckpointRequestManager;
-import com.example.collectorexample002.request.record.CheckpointRequest;
-import com.example.collectorexample002.netty.config.ChannelAttributes;
-import com.example.collectorexample002.protocol.modbus.ModbusExceptionCode;
-import com.example.collectorexample002.request.record.CheckpointQueueData;
-import com.example.collectorexample002.request.record.CheckpointData;
+import com.example.collectorexample002.netty.request.CheckpointRequestManager;
+import com.example.collectorexample002.netty.request.record.CheckpointRequest;
+import com.example.collectorexample002.netty.request.ChannelAttributes;
+import com.example.collectorexample002.enums.ModbusExceptionCode;
+import com.example.collectorexample002.netty.request.record.CheckpointQueueData;
+import com.example.collectorexample002.netty.request.record.CheckpointData;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -45,7 +45,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
         try {
 
-            // channelRead 진입 이후 즉시 Map 에서 삭제하면서 CheckpointRequest 반환
+            // channelRead 진입 이후 즉시 Map 에서 삭제하면서 CheckpointRequest 반환, 응답 받았음을 알림
             CheckpointRequest pendingRequest = CheckpointRequestManager.REQUEST_MAP.remove(txId);
 
             if (pendingRequest == null) {
@@ -73,7 +73,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             // header length, byte count 유효성 검사
             int byteCount = payload.readUnsignedByte();
             if (length - 3 != byteCount) {
-                log.error("[MODBUS_DECODE] length({} byte) - 3 byte = {}, byteCount = {} 유효성 검증 실패", length, length - 3, byteCount);
+                log.error("[MODBUS_DECODE] length: {}, byteCount: {} 유효성 검증 실패", length, byteCount);
 
                 if (responseFuture != null && !responseFuture.isDone()){
                     responseFuture.completeExceptionally(new IllegalArgumentException("헤더 length, byte count 비교 검증 오류"));
@@ -83,11 +83,11 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
 
             Map<Long, Map<Integer, String>> enumMasterMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
-            // 요청시 사용했던 레지스터 리스트 정보
+            // 요청시 사용했던 체크포인트 리스트 정보
             List<Checkpoint> checkpointList = pendingRequest.registers();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
-            List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpointList, byteCount, txId, enumMasterMap);
+            List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpointList, byteCount, enumMasterMap);
 
             if (checkpointDataList == null) {
                 if (responseFuture != null && !responseFuture.isDone()) {
@@ -112,7 +112,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<CheckpointData> parsePayloads(ByteBuf payload, List<Checkpoint> checkpointList, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
+    private List<CheckpointData> parsePayloads(ByteBuf payload, List<Checkpoint> checkpointList, int byteCount, Map<Long, Map<Integer, String>> enumMasterMap) {
 
         List<CheckpointData> checkpointDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
@@ -120,7 +120,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         // register 개별 파싱 작업
         for (Checkpoint checkpoint : checkpointList) {
 
-            // 현재 레지스터가 요구하는 바이트 크기 계산 (1 count = 2 Byte)
+            // 현재 체크포인트가 요구하는 바이트 크기 계산 (1 count = 2 Byte)
             int requireBytes = checkpoint.requestCount() * 2;
 
             // payload 바이트 크기 유효성 검증
@@ -181,16 +181,22 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                     if (parsedValue instanceof Number numValue)
                     {
                         Map<Integer, String> enumCodeMap = enumMasterMap.get(checkpoint.enumId());
+                        if (enumCodeMap.isEmpty()) {
+                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, enumId({})에 해당되는 정보가 없음", checkpoint.checkpointId(), checkpoint.enumId());
+                            continue;
+                        }
+
                         parsedEnumValue = Optional.ofNullable(enumCodeMap.get(numValue.intValue()));
 
                         if (parsedEnumValue.isEmpty()) {
-                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum interfaceId: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
+                            log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 매핑 정보, enum id: {}, enum code: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
                             continue;
                         } else {
                             parsedValue = parsedEnumValue;
                         }
                     } else {
                         log.warn("[MODBUS_DECODE] checkpoint_id: {}, Number 타입이 아닌 parseValue: {}", checkpoint.checkpointId(), parsedValue);
+                        continue;
                     }
                 }
             } else {
@@ -198,6 +204,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                 continue;
             }
 
+            // redis, kafka 전달용 체크포인트 리스트
             checkpointDataList.add(new CheckpointData(
             checkpoint.checkpointId(),
             checkpoint.requestAddress(),

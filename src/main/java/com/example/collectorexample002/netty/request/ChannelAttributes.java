@@ -1,4 +1,4 @@
-package com.example.collectorexample002.netty;
+package com.example.collectorexample002.netty.request;
 
 import io.netty.util.AttributeKey;
 

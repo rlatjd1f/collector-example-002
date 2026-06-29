@@ -1,6 +1,6 @@
 package com.example.collectorexample002.db.service;
 
-import com.example.collectorexample002.request.record.CheckpointQueueData;
+import com.example.collectorexample002.netty.request.record.CheckpointQueueData;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +34,7 @@ public class KafkaDataService {
     private final static String FAIL_MESSAGE_PATH = "logs/fail/";
     private final static long KAFKA_SUSPEND_DURATION_MS = 10000;
 
-    private final QueueManagerService queueService;
+    private final QueueManageService queueService;
     private KafkaProducer<String, String> producer;
 
     @Value("${spring.kafka.bootstrap-servers}")
@@ -166,7 +166,7 @@ public class KafkaDataService {
     /**
      * 60초 주기로 fail log 로 복구작업을 하기위한 검사
      */
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelay = 60000, initialDelay = 5000)
     public void msgRestoreScheduler() {
 
         // kafka 장애상태일 경우 리턴

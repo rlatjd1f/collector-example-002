@@ -1,13 +1,11 @@
-package com.example.collectorexample002.netty.pipeline.client;
+package com.example.collectorexample002.netty.request;
 
 import com.example.collectorexample002.db.repository.DeviceInterfaceRepository;
 import com.example.collectorexample002.db.repository.EnumJdbcRepository;
 import com.example.collectorexample002.db.record.Checkpoint;
 import com.example.collectorexample002.db.record.DeviceInterface;
-import com.example.collectorexample002.request.record.CheckpointRequest;
-import com.example.collectorexample002.request.CheckpointRequestManager;
+import com.example.collectorexample002.netty.request.record.CheckpointRequest;
 import com.example.collectorexample002.db.record.CheckpointEnumCode;
-import com.example.collectorexample002.netty.ChannelAttributes;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
@@ -120,8 +118,8 @@ public class ModbusClientManager {
             CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface, checkpointList, txId)
                     .thenAccept(ReferenceCounted::release)
                     .exceptionally(ex -> {
-                        log.error("[MODBUS_CLIENT] [{}] 체크포인트 = {} 수집 실패, {}",
-                                txId, checkpointList.get(0).requestAddress(), ex.getMessage());
+                        log.error("[MODBUS_CLIENT] 체크포인트 = {} 수집 실패, {}",
+                                checkpointList.get(0).requestAddress(), ex.getMessage());
                         return null;
                     });
 

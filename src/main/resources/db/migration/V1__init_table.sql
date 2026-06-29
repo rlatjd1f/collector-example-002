@@ -49,6 +49,6 @@ create table checkpoint (
     enum_id             bigint,
     description         varchar(200),
     primary key (id),
-    constraint fk_checkpoint_interface foreign key (interface_id) references device_interface(id),
+    constraint fk_checkpoint_interface foreign key (interface_id) references device_interface(id) on delete cascade,
     constraint fk_checkpoint_enum foreign key (enum_id) references checkpoint_enum_master(id)
 );

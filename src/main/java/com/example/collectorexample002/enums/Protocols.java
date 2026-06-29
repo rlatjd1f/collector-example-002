@@ -1,4 +1,4 @@
-package com.example.collectorexample002.protocol;
+package com.example.collectorexample002.enums;
 
 public enum Protocols {
     MODBUS,

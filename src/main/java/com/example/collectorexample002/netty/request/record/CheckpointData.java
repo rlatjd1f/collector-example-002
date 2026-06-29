@@ -1,4 +1,4 @@
-package com.example.collectorexample002.request.record;
+package com.example.collectorexample002.netty.request.record;
 
 import java.time.LocalDateTime;
 

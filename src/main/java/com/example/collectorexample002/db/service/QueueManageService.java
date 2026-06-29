@@ -1,6 +1,6 @@
 package com.example.collectorexample002.db.service;
 
-import com.example.collectorexample002.request.record.CheckpointQueueData;
+import com.example.collectorexample002.netty.request.record.CheckpointQueueData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -8,7 +8,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 @Component
 @Slf4j
-public class QueueManagerService {
+public class QueueManageService {
 
     private final LinkedBlockingQueue<CheckpointQueueData> redisQueue = new LinkedBlockingQueue<>(5000);
     private final LinkedBlockingQueue<CheckpointQueueData> kafkaQueue = new LinkedBlockingQueue<>(5000);

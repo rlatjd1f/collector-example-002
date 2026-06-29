@@ -22,7 +22,7 @@ public class DeviceInterfaceRepository {
                 " from checkpoint where interface_id = :interface_id";
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("interfaceId", interfaceId);
+                .addValue("interface_id", interfaceId);
 
         return jdbcTemplate.query(sql, params, new CheckpointRowMapper());
     }

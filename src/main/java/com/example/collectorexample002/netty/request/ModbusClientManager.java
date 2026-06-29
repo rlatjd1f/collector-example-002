@@ -1,14 +1,13 @@
 package com.example.collectorexample002.netty.pipeline.client;
 
 import com.example.collectorexample002.db.repository.DeviceInterfaceRepository;
-import com.example.collectorexample002.db.repository.DeviceJdbcRepository;
 import com.example.collectorexample002.db.repository.EnumJdbcRepository;
 import com.example.collectorexample002.db.record.Checkpoint;
 import com.example.collectorexample002.db.record.DeviceInterface;
 import com.example.collectorexample002.request.record.CheckpointRequest;
 import com.example.collectorexample002.request.CheckpointRequestManager;
 import com.example.collectorexample002.db.record.CheckpointEnumCode;
-import com.example.collectorexample002.netty.config.ChannelAttributes;
+import com.example.collectorexample002.netty.ChannelAttributes;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
@@ -35,7 +34,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ModbusClientManager {
 
-    private final DeviceJdbcRepository deviceJdbcRepository;
     private final DeviceInterfaceRepository interfaceRepository;
     private final EnumJdbcRepository enumJdbcRepository;
     private final AtomicInteger transactionIdGenerator = new AtomicInteger(0);
@@ -118,12 +116,12 @@ public class ModbusClientManager {
         List<CompletableFuture<Void>> futureTasks = new ArrayList<>();
 
         // 루프 돌면서 전송 메서드의 리턴인 future 객체를 리스트에 저장
-        readBlocks.forEach((txId, checkpoints) -> {
-            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface, checkpoints, txId)
+        readBlocks.forEach((txId, checkpointList) -> {
+            CompletableFuture<Void> requestFuture = sendModbusRequest(channel, deviceInterface, checkpointList, txId)
                     .thenAccept(ReferenceCounted::release)
                     .exceptionally(ex -> {
                         log.error("[MODBUS_CLIENT] [{}] 체크포인트 = {} 수집 실패, {}",
-                                txId, checkpoints.get(0).requestAddress(), ex.getMessage());
+                                txId, checkpointList.get(0).requestAddress(), ex.getMessage());
                         return null;
                     });
 
@@ -149,28 +147,23 @@ public class ModbusClientManager {
     /**
      * modbus tcp 요청 전송 메서드
      */
-    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, DeviceInterface deviceInterface, List<Checkpoint> checkpoints, Integer txId) {
+    private CompletableFuture<ByteBuf> sendModbusRequest(Channel channel, DeviceInterface deviceInterface, List<Checkpoint> checkpointList, Integer txId) {
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
 
-        // 비동기 응답처리에 사용할 future 객체와 디코딩시 필요한 checkpoint 정보 전달
-        CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, checkpoints, deviceInterface));
-        // 연속된 레지스터들의 시작 주소
-        int requestAddress = checkpoints.get(0).requestAddress();
-        // 연속된 레지스터들의 카운트 합
-        int requestCountSum = checkpoints.stream().mapToInt(Checkpoint::requestCount).sum();
+        // 비동기 응답처리에 사용할 future 객체, checkpoint 리스트
+        CheckpointRequestManager.REQUEST_MAP.put(txId, new CheckpointRequest(future, checkpointList, deviceInterface));
+        int requestStartAddress = checkpointList.get(0).requestAddress();
+        int requestCountSum = checkpointList.stream().mapToInt(Checkpoint::requestCount).sum();
 
-        // Modbus TCP MBAP Header + PDU
-        ByteBuf requestBuffer = channel.alloc().buffer(12);
+        ByteBuf requestBuffer = channel.alloc().buffer(12);     // Modbus TCP MBAP Header + PDU
 
-        // HEADER 7 Bytes
-        requestBuffer.writeShort(txId);
-        requestBuffer.writeShort(0);    // protocol interfaceId
+        requestBuffer.writeShort(txId);       // transaction id
+        requestBuffer.writeShort(0);    // protocol id
         requestBuffer.writeShort(6);    // length
-        requestBuffer.writeByte(deviceInterface.unitId());     // unit interfaceId
+        requestBuffer.writeByte(deviceInterface.unitId());     // unit id
 
-        // PDU 5 Bytes
         requestBuffer.writeByte(3); // function code 0x03
-        requestBuffer.writeShort(requestAddress);
+        requestBuffer.writeShort(requestStartAddress);
         requestBuffer.writeShort(requestCountSum);
 
         channel.writeAndFlush(requestBuffer).addListener(writeFuture -> {

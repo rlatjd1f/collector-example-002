@@ -208,9 +208,6 @@ public class KafkaDataService {
             if (isSuccess) {
                 if (failLog.delete()) {
                     log.info("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 성공 {}", failLog.getName());
-                } else {
-                    log.warn("[KAFKA_RESTORE] kafka 파일 복구 완료후 삭제 실패 {}", failLog.getName());
-                    failLog.renameTo(new File(String.format("%s%s.remove", FAIL_MESSAGE_PATH, failLog.getName())));
                 }
             }
         }

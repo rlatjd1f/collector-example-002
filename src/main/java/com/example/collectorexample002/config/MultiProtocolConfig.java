@@ -1,6 +1,6 @@
 package com.example.collectorexample002.netty.config;
 
-import com.example.collectorexample002.db.service.QueueManagerService;
+import com.example.collectorexample002.db.service.QueueManageService;
 import com.example.collectorexample002.netty.pipeline.inbound.DataQueueHandler;
 import com.example.collectorexample002.netty.pipeline.inbound.ModbusPacketDecoder;
 import io.netty.bootstrap.Bootstrap;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class MultiProtocolConfig {
 
-    private final QueueManagerService queueService;
+    private final QueueManageService queueService;
 
     @Bean(destroyMethod = "shutdownGracefully")
     public EventLoopGroup sharedWorkerGroup() {

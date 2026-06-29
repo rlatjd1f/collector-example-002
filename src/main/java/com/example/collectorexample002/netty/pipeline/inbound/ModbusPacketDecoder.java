@@ -37,10 +37,10 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        int txId = payload.readUnsignedShort();
-        payload.readUnsignedShort();    // interfaceId
-        int length = payload.readUnsignedShort();
-        payload.readUnsignedByte();     // unitId
+        int txId = payload.readUnsignedShort();     // transaction id
+        payload.readUnsignedShort();                // protocol id
+        int length = payload.readUnsignedShort();   // length
+        payload.readUnsignedByte();                 // unit id
         log.debug("[MODBUS_DECODE] 패킷 분석 시작 txId: {}, unitId(1 Byte) + PDU length: {}", txId, length);
 
         try {
@@ -61,7 +61,8 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             int functionCode = payload.readUnsignedByte();
             if ((functionCode & 0x80) == 0x80) {
                 int exceptionCode = payload.readUnsignedByte();
-                log.error("[MODBUS_DECODE] Modbus function code 에러, ErrorCode = [{}] - {}", exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
+                log.error("[MODBUS_DECODE] Modbus function code 에러, ErrorCode = [{}] - {}",
+                        exceptionCode, ModbusExceptionCode.fromCode(exceptionCode));
 
                 if (responseFuture != null && !responseFuture.isDone()){
                     responseFuture.completeExceptionally(new RuntimeException("function code 오류: " + exceptionCode));
@@ -72,7 +73,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             // header length, byte count 유효성 검사
             int byteCount = payload.readUnsignedByte();
             if (length - 3 != byteCount) {
-                log.error("[MODBUS_DECODE] length - 3 = {}, byteCount = {} 유효성 검증 실패", length, byteCount);
+                log.error("[MODBUS_DECODE] length({} byte) - 3 byte = {}, byteCount = {} 유효성 검증 실패", length, length - 3, byteCount);
 
                 if (responseFuture != null && !responseFuture.isDone()){
                     responseFuture.completeExceptionally(new IllegalArgumentException("헤더 length, byte count 비교 검증 오류"));
@@ -83,10 +84,10 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
             Map<Long, Map<Integer, String>> enumMasterMap = ctx.channel().attr(ChannelAttributes.ENUM_MAP).get();
 
             // 요청시 사용했던 레지스터 리스트 정보
-            List<Checkpoint> checkpoints = pendingRequest.registers();
+            List<Checkpoint> checkpointList = pendingRequest.registers();
 
             // 다음 핸들러에 전달하기 위한 리스트 반환
-            List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpoints, byteCount, txId, enumMasterMap);
+            List<CheckpointData> checkpointDataList = parsePayloads(payload, checkpointList, byteCount, txId, enumMasterMap);
 
             if (checkpointDataList == null) {
                 if (responseFuture != null && !responseFuture.isDone()) {
@@ -111,20 +112,21 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private List<CheckpointData> parsePayloads(ByteBuf payload, List<Checkpoint> checkpoints, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
+    private List<CheckpointData> parsePayloads(ByteBuf payload, List<Checkpoint> checkpointList, int byteCount, int txId, Map<Long, Map<Integer, String>> enumMasterMap) {
 
         List<CheckpointData> checkpointDataList = new ArrayList<>();
         int endReadIndex = payload.readerIndex() + byteCount;
 
         // register 개별 파싱 작업
-        for (Checkpoint checkpoint : checkpoints) {
+        for (Checkpoint checkpoint : checkpointList) {
 
-            // 현재 레지스터가 요구하는 바이트 크기 계산 (1 Register = 2 Byte)
+            // 현재 레지스터가 요구하는 바이트 크기 계산 (1 count = 2 Byte)
             int requireBytes = checkpoint.requestCount() * 2;
 
             // payload 바이트 크기 유효성 검증
-            if (payload.readerIndex() + requireBytes > endReadIndex || payload.readableBytes() < requireBytes) {
-                log.warn("TxId = {} 수신 데이터 크기가 레지스터 요구량 보다 작음", txId);
+            if (payload.readerIndex() + requireBytes > endReadIndex) {
+                log.warn("[MODBUS_DECODE] 체크포인트 규격 요구량이 실제 수집값보다 높음, checkpoint id: {}, address: {}, count: {}",
+                        checkpoint.checkpointId(),checkpoint.requestAddress(),checkpoint.requestCount());
                 if (payload.readerIndex() < endReadIndex) {
                     payload.skipBytes(endReadIndex - payload.readerIndex());
                 }
@@ -184,7 +186,11 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                         if (parsedEnumValue.isEmpty()) {
                             log.warn("[MODBUS_DECODE] checkpoint_id: {}, 올바르지 않은 enum 정보, enum interfaceId: {}, value: {}", checkpoint.checkpointId(), checkpoint.enumId(), parsedValue);
                             continue;
+                        } else {
+                            parsedValue = parsedEnumValue;
                         }
+                    } else {
+                        log.warn("[MODBUS_DECODE] checkpoint_id: {}, Number 타입이 아닌 parseValue: {}", checkpoint.checkpointId(), parsedValue);
                     }
                 }
             } else {

@@ -16,7 +16,7 @@ public class DeviceJdbcRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<DeviceInterface> findAllDevice() {
+    public List<DeviceInterface> findAllDeviceInterface() {
         String sql = "select di.device_id ,di.protocol_id ,di.id as interface_id ,p.name as protocol_name ,di.unit_id ,d.name as device_name, di.interface_host, di.interface_port " +
                 "from device_interface di " +
                 "join device d on d.id = di.device_id " +

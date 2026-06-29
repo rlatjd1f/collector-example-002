@@ -27,7 +27,7 @@ public class MultiProtocolConfig {
 
     private final QueueManageService queueService;
 
-    @Bean(destroyMethod = "shutdownGracefully")
+    @Bean
     public EventLoopGroup sharedWorkerGroup() {
         return new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     }

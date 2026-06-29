@@ -101,7 +101,7 @@ public class ModbusPacketDecoder extends ChannelInboundHandlerAdapter {
                 CheckpointQueueData checkpointQueueData = new CheckpointQueueData(deviceId, interfaceId, checkpointDataList);
 
                 // 파싱 완료후 비동기 완료처리
-                responseFuture.complete(payload.retain());
+                responseFuture.complete(null);
                 ctx.fireChannelRead(checkpointQueueData);
             }
 
